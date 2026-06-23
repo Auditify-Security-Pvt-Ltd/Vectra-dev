@@ -1,0 +1,162 @@
+[
+  {
+    "cveId": "CVE-2022-0543",
+    "technology": "Redis",
+    "affectedVersions": ["6.2.6", "6.0.16", "5.0.14"],
+    "severity": "CRITICAL",
+    "cvss": 10.0,
+    "exploitAvailable": true,
+    "description": "Lua sandbox escape in Redis on Debian/Ubuntu systems allows remote code execution via maliciously crafted Lua script.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-0543", "https://www.exploit-db.com/exploits/51552"]
+  },
+  {
+    "cveId": "CVE-2021-32762",
+    "technology": "Redis",
+    "affectedVersions": ["6.2.5", "6.0.15", "5.0.13"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Integer overflow in Redis RESP3 protocol handling allows heap corruption and potential code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-32762"]
+  },
+  {
+    "cveId": "CVE-2021-32761",
+    "technology": "Redis",
+    "affectedVersions": ["6.2.4", "6.0.14", "5.0.12"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Integer overflow in Redis GETDEL and GETEX commands via 64-bit counter overflow.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-32761"]
+  },
+  {
+    "cveId": "CVE-2021-32687",
+    "technology": "Redis",
+    "affectedVersions": ["6.2.5", "6.0.15", "5.0.13"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Integer overflow in Redis intset data structure when inserting elements, leading to heap memory corruption.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-32687"]
+  },
+  {
+    "cveId": "CVE-2021-32626",
+    "technology": "Redis",
+    "affectedVersions": ["6.2.5", "6.0.15", "5.0.13"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Heap overflow in Redis Lua scripts via specially crafted command arguments that overflow the Lua stack.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-32626"]
+  },
+  {
+    "cveId": "CVE-2021-32672",
+    "technology": "Redis",
+    "affectedVersions": ["6.2.5", "6.0.15", "5.0.13"],
+    "severity": "MEDIUM",
+    "cvss": 4.3,
+    "exploitAvailable": false,
+    "description": "Out-of-bounds read in Redis Lua scripting via specially crafted script causing information disclosure.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-32672"]
+  },
+  {
+    "cveId": "CVE-2021-32675",
+    "technology": "Redis",
+    "affectedVersions": ["6.2.5", "6.0.15", "5.0.13"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Redis denial of service via malformed request to CLIENT NO-EVICT command causing infinite loop.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-32675"]
+  },
+  {
+    "cveId": "CVE-2021-29477",
+    "technology": "Redis",
+    "affectedVersions": ["6.2.2", "6.0.12", "5.0.11"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Integer overflow in Redis STRALGO LCS command when processing arguments leads to heap buffer overflow.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-29477"]
+  },
+  {
+    "cveId": "CVE-2021-29478",
+    "technology": "Redis",
+    "affectedVersions": ["6.2.2", "6.0.12"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Integer overflow in Redis COPY command with REPLACE option when handling large databases.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-29478"]
+  },
+  {
+    "cveId": "CVE-2020-14147",
+    "technology": "Redis",
+    "affectedVersions": ["6.0.5", "5.0.9", "4.0.14"],
+    "severity": "HIGH",
+    "cvss": 7.7,
+    "exploitAvailable": false,
+    "description": "Out-of-bounds write in Redis when handling certain pattern matching operations in Lua scripts.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-14147"]
+  },
+  {
+    "cveId": "CVE-2018-11218",
+    "technology": "Redis",
+    "affectedVersions": ["4.0.9", "3.2.12", "3.0.7"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Heap corruption in Redis via crafted GEODIST command arguments, leading to potential code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-11218"]
+  },
+  {
+    "cveId": "CVE-2018-11219",
+    "technology": "Redis",
+    "affectedVersions": ["4.0.9", "3.2.12", "3.0.7"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Integer overflow in Redis scripting allows remote code execution via malicious Lua script arguments.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-11219"]
+  },
+  {
+    "cveId": "CVE-2023-41053",
+    "technology": "Redis",
+    "affectedVersions": ["7.2.0", "7.0.13", "6.2.14"],
+    "severity": "LOW",
+    "cvss": 3.3,
+    "exploitAvailable": false,
+    "description": "Redis permissions bypass via SORT_RO command accessing key types that require write permissions.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-41053"]
+  },
+  {
+    "cveId": "CVE-2023-45145",
+    "technology": "Redis",
+    "affectedVersions": ["7.2.2", "7.0.14", "6.2.14"],
+    "severity": "LOW",
+    "cvss": 3.6,
+    "exploitAvailable": false,
+    "description": "Redis Unix socket file permissions race condition during startup may allow local privilege escalation.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-45145"]
+  },
+  {
+    "cveId": "CVE-2022-36021",
+    "technology": "Redis",
+    "affectedVersions": ["7.0.8", "6.2.10", "6.0.18"],
+    "severity": "MEDIUM",
+    "cvss": 5.5,
+    "exploitAvailable": false,
+    "description": "Redis denial of service via specially crafted string matching patterns causing exponential complexity.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-36021"]
+  },
+  {
+    "cveId": "CVE-2023-28856",
+    "technology": "Redis",
+    "affectedVersions": ["7.0.10", "6.2.11", "6.0.19"],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "Redis authenticated denial of service via SRANDMEMBER, ZRANDMEMBER, and HRANDFIELD commands with large count values.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-28856"]
+  }
+]

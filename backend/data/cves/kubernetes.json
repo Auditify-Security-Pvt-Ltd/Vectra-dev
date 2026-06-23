@@ -1,0 +1,142 @@
+[
+  {
+    "cveId": "CVE-2018-1002105",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.12.2", "1.11.4", "1.10.9", "1.9.11"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Kubernetes API server privilege escalation allows unauthenticated users to gain full admin access via crafted backend responses through the API aggregation layer.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-1002105"]
+  },
+  {
+    "cveId": "CVE-2021-25741",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.22.1", "1.21.4", "1.20.10", "1.19.14"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Kubernetes symlink exchange attack allows attacker to access unauthorized files on the node via hostPath volume.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-25741"]
+  },
+  {
+    "cveId": "CVE-2020-8558",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.18.5", "1.17.8", "1.16.12"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Kubernetes localhost bound API accessible from adjacent pod network via localhost bound services exposed to adjacent pods in shared node network namespace.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-8558"]
+  },
+  {
+    "cveId": "CVE-2020-8559",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.18.5", "1.17.8", "1.16.12"],
+    "severity": "MEDIUM",
+    "cvss": 6.4,
+    "exploitAvailable": false,
+    "description": "Kubernetes API server SSRF via redirect response from backend servers, allows privilege escalation.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-8559"]
+  },
+  {
+    "cveId": "CVE-2020-8555",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.18.2", "1.17.5", "1.16.9"],
+    "severity": "MEDIUM",
+    "cvss": 6.3,
+    "exploitAvailable": false,
+    "description": "SSRF in Kubernetes kube-controller-manager via StorageClass provisioner plugin allows half-blind SSRF attacks.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-8555"]
+  },
+  {
+    "cveId": "CVE-2019-11247",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.15.3", "1.14.6", "1.13.10"],
+    "severity": "HIGH",
+    "cvss": 8.1,
+    "exploitAvailable": false,
+    "description": "Kubernetes API server allows access to cluster-scoped custom resources as if they were namespace-scoped when namespaced=false in CRD.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-11247"]
+  },
+  {
+    "cveId": "CVE-2019-11250",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.15.3", "1.14.6", "1.13.10"],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": false,
+    "description": "Kubernetes client libraries leak sensitive bearer tokens in debug logs when verbose logging is enabled.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-11250"]
+  },
+  {
+    "cveId": "CVE-2019-11253",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.16.2", "1.15.5", "1.14.8"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Kubernetes YAML bomb denial of service via exponentially expanding YAML documents in API request.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-11253"]
+  },
+  {
+    "cveId": "CVE-2022-3294",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.25.3", "1.24.7", "1.23.13", "1.22.15"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Kubernetes node address bypass when proxying calls through kube-apiserver causes node address check bypass leading to SSRF.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-3294"]
+  },
+  {
+    "cveId": "CVE-2022-3172",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.25.2", "1.24.6", "1.23.12"],
+    "severity": "HIGH",
+    "cvss": 7.1,
+    "exploitAvailable": false,
+    "description": "Kubernetes kube-apiserver aggregated API endpoint open redirect allows redirection to malicious servers.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-3172"]
+  },
+  {
+    "cveId": "CVE-2021-25737",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.21.2", "1.20.8", "1.19.12"],
+    "severity": "LOW",
+    "cvss": 4.8,
+    "exploitAvailable": false,
+    "description": "Kubernetes EndpointSlice validation allows redirect of traffic to non-intended services via SSRF.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-25737"]
+  },
+  {
+    "cveId": "CVE-2023-2727",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.27.1", "1.26.4", "1.25.9"],
+    "severity": "HIGH",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "Kubernetes imagePolicy bypass allows bypassing image restrictions by using init container images.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-2727"]
+  },
+  {
+    "cveId": "CVE-2023-2728",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.27.1", "1.26.4", "1.25.9"],
+    "severity": "HIGH",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "Kubernetes ServiceAccount admission plugin bypass via ephemeral containers allows bypassing pod security standards.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-2728"]
+  },
+  {
+    "cveId": "CVE-2024-0793",
+    "technology": "Kubernetes",
+    "affectedVersions": ["1.29.0", "1.28.0", "1.27.0"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Kubernetes kube-controller-manager denial of service via specially crafted ClusterCIDR objects.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2024-0793"]
+  }
+]

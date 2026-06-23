@@ -1,0 +1,292 @@
+[
+  {
+    "cveId": "CVE-2023-6553",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Backup Migration plugin for WordPress (< 1.3.8) allows unauthenticated remote code execution via file upload.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-6553"]
+  },
+  {
+    "cveId": "CVE-2023-6875",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "POST SMTP Mailer plugin for WordPress (< 2.8.7) allows unauthenticated authentication bypass and account takeover.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-6875"]
+  },
+  {
+    "cveId": "CVE-2023-5360",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Royal Elementor Addons and Templates plugin for WordPress (< 1.3.79) allows unauthenticated arbitrary file upload.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-5360"]
+  },
+  {
+    "cveId": "CVE-2022-4977",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Shortcodes and extra features for Phlox theme plugin for WordPress allows authenticated remote code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-4977"]
+  },
+  {
+    "cveId": "CVE-2022-3236",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "SQL injection in Booster for WooCommerce plugin for WordPress allows unauthenticated attackers to extract sensitive data.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-3236"]
+  },
+  {
+    "cveId": "CVE-2022-1386",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Fusion Builder (Avada) plugin for WordPress allows unauthenticated SSRF and local file inclusion.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-1386"]
+  },
+  {
+    "cveId": "CVE-2022-0739",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "SQL injection in BookingPress plugin for WordPress allows unauthenticated SQL injection via the wpbc_front_form_submit_step_first action.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-0739"]
+  },
+  {
+    "cveId": "CVE-2021-25003",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "WPCargo Track & Trace plugin for WordPress allows authenticated remote code execution via file upload.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-25003"]
+  },
+  {
+    "cveId": "CVE-2021-24917",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "WPS Hide Login plugin for WordPress allows bypass of login page hiding via direct URL manipulation.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-24917"]
+  },
+  {
+    "cveId": "CVE-2021-24507",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Astra Pro Addon plugin for WordPress allows authenticated privilege escalation and arbitrary file read.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-24507"]
+  },
+  {
+    "cveId": "CVE-2020-35942",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "CSRF vulnerability in NextGen Gallery plugin for WordPress leading to remote code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-35942"]
+  },
+  {
+    "cveId": "CVE-2020-35943",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "CSRF vulnerability in NextGen Gallery plugin for WordPress leading to arbitrary file upload.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-35943"]
+  },
+  {
+    "cveId": "CVE-2020-25213",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 10.0,
+    "exploitAvailable": true,
+    "description": "File Manager (wp-file-manager) plugin for WordPress before 6.9 allows unauthenticated remote code execution via file upload.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-25213"]
+  },
+  {
+    "cveId": "CVE-2020-11738",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": true,
+    "description": "Snap Creek Duplicator plugin for WordPress allows path traversal leading to arbitrary file read and download.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-11738"]
+  },
+  {
+    "cveId": "CVE-2019-17132",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "vBulletin plugin for WordPress allows unauthenticated SQL injection via the subTemplates parameter.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-17132"]
+  },
+  {
+    "cveId": "CVE-2019-9978",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "MEDIUM",
+    "cvss": 6.1,
+    "exploitAvailable": false,
+    "description": "Social Warfare plugin for WordPress (< 3.5.3) allows stored XSS and remote code execution via crafted payload.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-9978"]
+  },
+  {
+    "cveId": "CVE-2018-9207",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "jQuery File Upload plugin vulnerability allows unauthenticated file upload and remote code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-9207"]
+  },
+  {
+    "cveId": "CVE-2021-34621",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "ProfilePress plugin for WordPress allows unauthenticated privilege escalation via user registration.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-34621"]
+  },
+  {
+    "cveId": "CVE-2022-2221",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "Email Subscribers & Newsletters plugin for WordPress allows authenticated SQL injection.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-2221"]
+  },
+  {
+    "cveId": "CVE-2021-24166",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "HIGH",
+    "cvss": 7.2,
+    "exploitAvailable": false,
+    "description": "Ninja Forms plugin for WordPress allows authenticated remote code execution via crafted form submission.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-24166"]
+  },
+  {
+    "cveId": "CVE-2021-24762",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Perfect Survey plugin for WordPress allows unauthenticated SQL injection via the question_id parameter.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-24762"]
+  },
+  {
+    "cveId": "CVE-2020-13927",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Airflow Experimental REST API authentication bypass allows unauthenticated command execution on WordPress hosting environments.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-13927"]
+  },
+  {
+    "cveId": "CVE-2023-28121",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "WooCommerce Payments plugin for WordPress allows unauthenticated privilege escalation by impersonating any user including administrators.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-28121"]
+  },
+  {
+    "cveId": "CVE-2022-4328",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "WooCommerce plugin for WordPress allows authenticated arbitrary file upload in product image handling.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-4328"]
+  },
+  {
+    "cveId": "CVE-2023-30777",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "HIGH",
+    "cvss": 7.1,
+    "exploitAvailable": false,
+    "description": "Advanced Custom Fields plugin for WordPress before 6.1.6 reflects user input in admin screens causing reflected XSS.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-30777"]
+  },
+  {
+    "cveId": "CVE-2022-0441",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "MasterStudy LMS WordPress plugin allows unauthenticated privilege escalation via admin account creation.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-0441"]
+  },
+  {
+    "cveId": "CVE-2022-0316",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "WeStand PageBuilder plugin for WordPress allows unauthenticated arbitrary file upload and remote code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-0316"]
+  },
+  {
+    "cveId": "CVE-2021-44223",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "WordPress Page Builder - Zion Builder plugin allows unauthenticated arbitrary file upload.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-44223"]
+  },
+  {
+    "cveId": "CVE-2024-2194",
+    "technology": "WordPress",
+    "affectedVersions": ["*"],
+    "severity": "HIGH",
+    "cvss": 7.2,
+    "exploitAvailable": false,
+    "description": "WP Statistics plugin for WordPress allows authenticated SQL injection via the current_page_type parameter.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2024-2194"]
+  }
+]

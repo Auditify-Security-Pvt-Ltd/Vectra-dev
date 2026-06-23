@@ -1,0 +1,142 @@
+[
+  {
+    "cveId": "CVE-2024-21626",
+    "technology": "Docker",
+    "affectedVersions": ["25.0.0", "24.0.0", "23.0.0"],
+    "severity": "HIGH",
+    "cvss": 8.6,
+    "exploitAvailable": true,
+    "description": "runc container escape via file descriptor leak allowing processes to access host filesystem. Affects all container runtimes using runc before 1.1.12.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2024-21626", "https://github.com/opencontainers/runc/security/advisories/GHSA-xr7r-f8xq-vfvv"]
+  },
+  {
+    "cveId": "CVE-2019-5736",
+    "technology": "Docker",
+    "affectedVersions": ["18.09", "18.06", "18.03"],
+    "severity": "HIGH",
+    "cvss": 8.6,
+    "exploitAvailable": true,
+    "description": "runc container escape allows malicious container to overwrite host runc binary and execute arbitrary code as root on the host.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-5736", "https://www.exploit-db.com/exploits/46359"]
+  },
+  {
+    "cveId": "CVE-2022-0492",
+    "technology": "Docker",
+    "affectedVersions": ["20.10", "19.03", "18.09"],
+    "severity": "HIGH",
+    "cvss": 7.8,
+    "exploitAvailable": true,
+    "description": "Linux kernel cgroups privilege escalation allows container escape when certain non-default configurations are active.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-0492"]
+  },
+  {
+    "cveId": "CVE-2021-30465",
+    "technology": "Docker",
+    "affectedVersions": ["20.10.5", "20.10.4", "20.10.3"],
+    "severity": "HIGH",
+    "cvss": 8.5,
+    "exploitAvailable": false,
+    "description": "runc symlink race condition in bind mount handling allows container escape via volume mount manipulation.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-30465"]
+  },
+  {
+    "cveId": "CVE-2020-15257",
+    "technology": "Docker",
+    "affectedVersions": ["19.03", "18.09"],
+    "severity": "MEDIUM",
+    "cvss": 5.2,
+    "exploitAvailable": false,
+    "description": "containerd abstract Unix domain socket access by containers running on the same host namespace allows container escape.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-15257"]
+  },
+  {
+    "cveId": "CVE-2019-16884",
+    "technology": "Docker",
+    "affectedVersions": ["19.03", "18.09", "18.06"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "AppArmor restriction bypass in runc via /proc file masking, allowing containers to access restricted kernel information.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-16884"]
+  },
+  {
+    "cveId": "CVE-2018-15664",
+    "technology": "Docker",
+    "affectedVersions": ["18.06", "18.03", "17.12"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Path traversal in Docker allows container images to read and write host filesystem files outside mount points.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-15664"]
+  },
+  {
+    "cveId": "CVE-2016-9962",
+    "technology": "Docker",
+    "affectedVersions": ["1.12", "1.11", "1.10"],
+    "severity": "MEDIUM",
+    "cvss": 6.4,
+    "exploitAvailable": false,
+    "description": "Docker race condition via ptrace in runc allows container to escape isolation boundaries during process startup.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2016-9962"]
+  },
+  {
+    "cveId": "CVE-2022-36109",
+    "technology": "Docker",
+    "affectedVersions": ["20.10.17", "20.10.16", "20.10.15"],
+    "severity": "MEDIUM",
+    "cvss": 6.3,
+    "exploitAvailable": false,
+    "description": "Docker supplementary groups not cleared when executing container image run operations, potentially leaking group permissions.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-36109"]
+  },
+  {
+    "cveId": "CVE-2021-21285",
+    "technology": "Docker",
+    "affectedVersions": ["20.10.1", "20.10.0", "19.03.15"],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "Docker denial of service via malformed manifest JSON causing daemon crash.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-21285"]
+  },
+  {
+    "cveId": "CVE-2021-21284",
+    "technology": "Docker",
+    "affectedVersions": ["20.10.1", "20.10.0"],
+    "severity": "MEDIUM",
+    "cvss": 6.8,
+    "exploitAvailable": false,
+    "description": "Docker run --userns-remap option allows privilege escalation via volume mount when userns-remap is configured.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-21284"]
+  },
+  {
+    "cveId": "CVE-2020-13401",
+    "technology": "Docker",
+    "affectedVersions": ["19.03", "18.09"],
+    "severity": "MEDIUM",
+    "cvss": 6.0,
+    "exploitAvailable": false,
+    "description": "Docker IPv6 router advertisement injection allows attacker to redirect traffic between containers on the same network.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-13401"]
+  },
+  {
+    "cveId": "CVE-2023-28840",
+    "technology": "Docker",
+    "affectedVersions": ["23.0.2", "23.0.1", "20.10.23"],
+    "severity": "HIGH",
+    "cvss": 8.7,
+    "exploitAvailable": false,
+    "description": "Docker Swarm encryption key management flaw allows traffic interception between Swarm nodes.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-28840"]
+  },
+  {
+    "cveId": "CVE-2014-5277",
+    "technology": "Docker",
+    "affectedVersions": ["1.3.0", "1.2.0", "1.1.0"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Docker pull allows downloading images over plain HTTP when HTTPS with certificate validation is expected, enabling MITM attacks.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2014-5277"]
+  }
+]

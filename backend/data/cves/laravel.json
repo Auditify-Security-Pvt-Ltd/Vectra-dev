@@ -1,0 +1,62 @@
+[
+  {
+    "cveId": "CVE-2021-3129",
+    "technology": "Laravel",
+    "affectedVersions": ["8.4.2", "8.4.1", "8.4.0", "7.x"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Remote code execution in Laravel via Ignition debug mode error page, allowing execution of arbitrary commands through crafted JSON payload when APP_DEBUG=true.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-3129", "https://www.exploit-db.com/exploits/49424"]
+  },
+  {
+    "cveId": "CVE-2018-15133",
+    "technology": "Laravel",
+    "affectedVersions": ["5.7.0", "5.6.0", "5.5.0"],
+    "severity": "HIGH",
+    "cvss": 8.1,
+    "exploitAvailable": true,
+    "description": "Remote code execution in Laravel via PHP object deserialization in the HTTP X-XSRF-TOKEN or remember me cookie when the application key is known.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-15133", "https://www.exploit-db.com/exploits/45139"]
+  },
+  {
+    "cveId": "CVE-2021-43503",
+    "technology": "Laravel",
+    "affectedVersions": ["8.73.0", "8.72.0", "8.71.0"],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "Laravel SQL injection vulnerability in Eloquent ORM when using certain where clause patterns with user input.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-43503"]
+  },
+  {
+    "cveId": "CVE-2022-40128",
+    "technology": "Laravel",
+    "affectedVersions": ["9.x", "8.x"],
+    "severity": "HIGH",
+    "cvss": 8.1,
+    "exploitAvailable": false,
+    "description": "Laravel open redirect via crafted URL in redirect()->to() when user-controlled input is used without validation.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-40128"]
+  },
+  {
+    "cveId": "CVE-2019-9081",
+    "technology": "Laravel",
+    "affectedVersions": ["5.7.15", "5.7.14", "5.7.13"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "PHP object injection in Laravel via crafted serialized data, allowing remote code execution through gadget chains.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-9081"]
+  },
+  {
+    "cveId": "CVE-2023-23814",
+    "technology": "Laravel",
+    "affectedVersions": ["10.x", "9.x"],
+    "severity": "MEDIUM",
+    "cvss": 5.4,
+    "exploitAvailable": false,
+    "description": "Laravel Blade template XSS via insufficient escaping in certain template contexts.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-23814"]
+  }
+]

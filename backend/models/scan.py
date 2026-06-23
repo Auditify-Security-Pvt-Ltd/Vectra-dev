@@ -33,6 +33,7 @@ class ScanRequest(BaseModel):
 
 
 class Finding(BaseModel):
+    source: str = "nuclei"      # nuclei | vectra | wpscan
     severity: Severity
     title: str
     template: str

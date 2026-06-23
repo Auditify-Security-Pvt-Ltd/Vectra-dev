@@ -1,0 +1,371 @@
+[
+  {
+    "cveId": "CVE-2021-23017",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.20.0",
+      "1.18.0",
+      "1.16.0",
+      "1.14.0"
+    ],
+    "severity": "HIGH",
+    "cvss": 7.7,
+    "exploitAvailable": true,
+    "description": "Off-by-one heap write in the nginx resolver allows a remote attacker who can control DNS responses to overwrite memory and potentially achieve remote code execution.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2021-23017",
+      "https://nginx.org/en/security_advisories.html"
+    ]
+  },
+  {
+    "cveId": "CVE-2019-20372",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.16.0",
+      "1.14.0",
+      "1.12.0"
+    ],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": false,
+    "description": "nginx 0.7.12 to 1.17.6 with certain error_page configurations allows HTTP request smuggling.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2019-20372"
+    ]
+  },
+  {
+    "cveId": "CVE-2019-9511",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.16.0",
+      "1.14.0"
+    ],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "HTTP/2 Data Dribble flood (Netflix bulletin) in nginx allows a peer to request large amounts of data, consuming excessive CPU and memory for a denial of service.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2019-9511"
+    ]
+  },
+  {
+    "cveId": "CVE-2019-9513",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.16.0",
+      "1.14.0"
+    ],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "HTTP/2 Resource Loop flood in nginx allows an attacker to create many request streams and continually shuffle their priority, causing excessive CPU usage.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2019-9513"
+    ]
+  },
+  {
+    "cveId": "CVE-2019-9516",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.16.0",
+      "1.14.0"
+    ],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "HTTP/2 0-Length Headers Leak in nginx allows a peer to send a stream of headers with a 0-length name and value, causing excessive memory allocation.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2019-9516"
+    ]
+  },
+  {
+    "cveId": "CVE-2018-16843",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.14.0",
+      "1.12.0"
+    ],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Excessive memory consumption in the nginx HTTP/2 implementation can be triggered to cause a denial of service.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2018-16843"
+    ]
+  },
+  {
+    "cveId": "CVE-2018-16844",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.14.0",
+      "1.12.0"
+    ],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Excessive CPU usage in the nginx HTTP/2 implementation can be triggered to cause a denial of service.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2018-16844"
+    ]
+  },
+  {
+    "cveId": "CVE-2018-16845",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.14.0",
+      "1.12.0"
+    ],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "The ngx_http_mp4_module in nginx may cause a worker process crash or memory disclosure when processing a specially crafted mp4 file.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2018-16845"
+    ]
+  },
+  {
+    "cveId": "CVE-2017-7529",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.12.0",
+      "1.10.0",
+      "1.8.0"
+    ],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": true,
+    "description": "Integer overflow in the range filter module of nginx 0.5.6 to 1.13.2 allows an attacker to obtain potentially sensitive cached information via a crafted Range header.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2017-7529"
+    ]
+  },
+  {
+    "cveId": "CVE-2016-4450",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.10.0",
+      "1.8.0"
+    ],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "NULL pointer dereference in ngx_chain_to_iovec in nginx 1.9.13 and earlier allows a denial of service via a crafted request that triggers temporary file writing.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2016-4450"
+    ]
+  },
+  {
+    "cveId": "CVE-2016-0742",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.8.0",
+      "1.6.0"
+    ],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "The resolver in nginx 0.6.18 to 1.9.9 allows remote attackers to cause a denial of service (worker process crash) via a crafted UDP DNS response.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2016-0742"
+    ]
+  },
+  {
+    "cveId": "CVE-2016-0746",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.8.0",
+      "1.6.0"
+    ],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Use-after-free in the resolver in nginx 0.6.18 to 1.9.9 allows remote attackers to cause a worker process crash or potentially execute code via a crafted DNS response.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2016-0746"
+    ]
+  },
+  {
+    "cveId": "CVE-2016-0747",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.8.0",
+      "1.6.0"
+    ],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": false,
+    "description": "The resolver in nginx 0.6.18 to 1.9.9 does not limit CNAME resolution, allowing remote attackers to cause excessive resource consumption.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2016-0747"
+    ]
+  },
+  {
+    "cveId": "CVE-2014-3556",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.6.0",
+      "1.4.0"
+    ],
+    "severity": "HIGH",
+    "cvss": 7.4,
+    "exploitAvailable": false,
+    "description": "SMTP proxy in nginx 1.5.6 to 1.7.3 allows STARTTLS command injection, enabling a man-in-the-middle attacker to insert commands into the encrypted session.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2014-3556"
+    ]
+  },
+  {
+    "cveId": "CVE-2014-3616",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.6.0",
+      "1.4.0"
+    ],
+    "severity": "MEDIUM",
+    "cvss": 5.9,
+    "exploitAvailable": false,
+    "description": "nginx 0.5.6 to 1.7.4 with shared SSL session cache or ticket key allows remote attackers to reuse SSL sessions via a crafted handshake.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2014-3616"
+    ]
+  },
+  {
+    "cveId": "CVE-2013-2028",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.4.0",
+      "1.3.9"
+    ],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Stack-based buffer overflow in nginx 1.3.9 to 1.4.0 allows remote attackers to execute arbitrary code via a chunked Transfer-Encoding request with a large chunk size.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2013-2028"
+    ]
+  },
+  {
+    "cveId": "CVE-2013-2070",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.4.0",
+      "1.3.9"
+    ],
+    "severity": "MEDIUM",
+    "cvss": 6.4,
+    "exploitAvailable": false,
+    "description": "ngx_http_proxy_module in nginx 1.1.4 to 1.4.0 with proxy_pass and proxy_cache may allow a buffer over-read and memory disclosure via a crafted upstream response.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2013-2070"
+    ]
+  },
+  {
+    "cveId": "CVE-2012-1180",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.0.0",
+      "0.8.0"
+    ],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": false,
+    "description": "nginx 0.1.0 to 1.1.18 allows remote attackers to obtain sensitive memory contents via crafted backend responses with proxy or fastcgi.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2012-1180"
+    ]
+  },
+  {
+    "cveId": "CVE-2011-4963",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.0.0",
+      "0.8.0"
+    ],
+    "severity": "MEDIUM",
+    "cvss": 5.0,
+    "exploitAvailable": false,
+    "description": "nginx on Windows allows remote attackers to bypass intended access restrictions via certain encoded characters in the URI.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2011-4963"
+    ]
+  },
+  {
+    "cveId": "CVE-2009-2629",
+    "technology": "nginx",
+    "affectedVersions": [
+      "0.7.0",
+      "0.6.0",
+      "0.5.0"
+    ],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Buffer underflow in ngx_http_parse_complex_uri in nginx 0.1.0 to 0.8.13 allows remote attackers to execute arbitrary code via crafted HTTP requests.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2009-2629"
+    ]
+  },
+  {
+    "cveId": "CVE-2022-41741",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.22.0",
+      "1.20.0",
+      "1.18.0"
+    ],
+    "severity": "HIGH",
+    "cvss": 7.0,
+    "exploitAvailable": false,
+    "description": "The ngx_http_mp4_module in nginx may cause a worker process crash or memory overwrite via a specially crafted audio or video file when the mp4 directive is used.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2022-41741"
+    ]
+  },
+  {
+    "cveId": "CVE-2022-41742",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.22.0",
+      "1.20.0",
+      "1.18.0"
+    ],
+    "severity": "HIGH",
+    "cvss": 7.1,
+    "exploitAvailable": false,
+    "description": "The ngx_http_mp4_module in nginx may cause a worker process crash and memory disclosure via a specially crafted mp4 file processed by the mp4 directive.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2022-41742"
+    ]
+  },
+  {
+    "cveId": "CVE-2024-7347",
+    "technology": "nginx",
+    "affectedVersions": [
+      "1.26.0",
+      "1.24.0",
+      "1.22.0"
+    ],
+    "severity": "MEDIUM",
+    "cvss": 4.7,
+    "exploitAvailable": false,
+    "description": "The ngx_http_mp4_module in nginx may over-read memory and crash a worker process when processing a specially crafted mp4 file with the mp4 directive enabled.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2024-7347"
+    ]
+  },
+  {
+    "cveId": "CVE-2009-3896",
+    "technology": "nginx",
+    "affectedVersions": [
+      "0.7.0",
+      "0.6.0"
+    ],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "NULL pointer dereference in nginx 0.1.0 to 0.8.14 allows remote attackers to cause a denial of service via a crafted request.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2009-3896"
+    ]
+  }
+]

@@ -13,9 +13,11 @@ from fastapi.responses import StreamingResponse
 
 from models.scan import Finding, HealthResponse, ScanProfile, ScanRequest, Severity
 from scanners.nuclei import is_nuclei_available, stream_nuclei_scan
+from scanners.wpscan import is_wpscan_available, is_wordpress, stream_wpscan
 from discovery.subfinder import is_subfinder_available, stream_subdomains
 from discovery.httpx_toolkit import is_httpx_toolkit_available, stream_probe_hosts
 from intelligence.nvd_client import get_cves_for_technology, parse_tech
+from checks.runner import run_checks_on_assets
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -33,6 +35,7 @@ _PENDING: List[Tuple[str, str, str]] = []
 # ── Mock findings (Nuclei unavailable) ──────────────────────────────
 _MOCK_FINDINGS: List[dict] = [
     {
+        "source": "nuclei",
         "severity": "high",
         "title": "Missing Content Security Policy",
         "template": "security-headers",
@@ -40,6 +43,7 @@ _MOCK_FINDINGS: List[dict] = [
         "description": "Content-Security-Policy header is absent.",
     },
     {
+        "source": "nuclei",
         "severity": "medium",
         "title": "Missing X-Frame-Options Header",
         "template": "security-headers",
@@ -47,6 +51,7 @@ _MOCK_FINDINGS: List[dict] = [
         "description": "X-Frame-Options header is not set.",
     },
     {
+        "source": "nuclei",
         "severity": "low",
         "title": "Missing X-Content-Type-Options Header",
         "template": "security-headers",
@@ -54,6 +59,7 @@ _MOCK_FINDINGS: List[dict] = [
         "description": "X-Content-Type-Options: nosniff header is absent.",
     },
     {
+        "source": "nuclei",
         "severity": "info",
         "title": "HTTP Server Header Detected",
         "template": "tech-detect",
@@ -73,7 +79,6 @@ _ACTIVE_RUNNING = {
     "initializing", "running", "processing", "saving",
     # Full Scan pipeline
     "discovering_assets", "validating_assets", "scanning_assets",
-    "detecting_technologies", "cve_analysis",
 }
 
 
@@ -98,6 +103,7 @@ def _coerce_finding(raw: dict) -> Optional[Finding]:
             Severity(sev_str) if sev_str in Severity._value2member_map_ else Severity.unknown
         )
         return Finding(
+            source=raw.get("source") or "nuclei",
             severity=severity,
             title=raw.get("title") or "Unknown",
             template=raw.get("template") or "unknown",
@@ -127,7 +133,19 @@ def _record_finding(scan_id: str, finding: Finding) -> None:
     _SCANS[scan_id]["templatesExecuted"] = len(
         set(f["template"] for f in _SCANS[scan_id]["findings"])
     )
-    _append_log(scan_id, f"[{finding.severity.value.upper()}] {finding.title}")
+    src = finding.source.upper() if finding.source else "NUCLEI"
+    _append_log(scan_id, f"[{src}][{finding.severity.value.upper()}] {finding.title}")
+
+
+def _set_engine(scan_id: str, engine: str, engine_status: str, finding_count: int = -1) -> None:
+    if scan_id not in _SCANS:
+        return
+    engines = _SCANS[scan_id].setdefault("engines", {})
+    if engine not in engines:
+        engines[engine] = {"status": "pending", "findingCount": 0}
+    engines[engine]["status"] = engine_status
+    if finding_count >= 0:
+        engines[engine]["findingCount"] = finding_count
 
 
 def _format_duration(seconds: float) -> str:
@@ -159,6 +177,13 @@ def _blank_scan(scan_id: str, target: str, profile: str) -> dict:
         "total_cves":       0,
         "duration":         None,
         "error":            None,
+        # Per-engine tracking (Full Scan)
+        "engines": {
+            "nuclei":        {"status": "pending", "findingCount": 0},
+            "vectra_checks": {"status": "pending", "findingCount": 0},
+            "wpscan":        {"status": "pending", "findingCount": 0},
+            "cve_analysis":  {"status": "pending", "findingCount": 0},
+        },
     }
 
 
@@ -210,7 +235,7 @@ async def _execute_quick_scan(scan_id: str, target: str, profile: str) -> None:
 
         if is_nuclei_available():
             async for raw_finding in stream_nuclei_scan(target, profile):
-                coerced = _coerce_finding(raw_finding)
+                coerced = _coerce_finding({**raw_finding, "source": "nuclei"})
                 if coerced:
                     _record_finding(scan_id, coerced)
         else:
@@ -251,21 +276,227 @@ async def _execute_quick_scan(scan_id: str, target: str, profile: str) -> None:
         logger.error(f"[{scan_id}] Unexpected error: {exc}")
 
 
+# ── Parallel Engine helpers (Full Scan) ──────────────────────────────
+
+async def _engine_nuclei(scan_id: str, live_assets: List[dict]) -> None:
+    """Engine 1 — Nuclei scans all live assets. Failure is isolated."""
+    _set_engine(scan_id, "nuclei", "running")
+    count = 0
+    try:
+        for asset in live_assets:
+            if _SCANS.get(scan_id, {}).get("status") not in _ACTIVE_RUNNING:
+                break
+            url = asset.get("url") or f"https://{asset['subdomain']}"
+            _append_log(scan_id, f"[Nuclei] Scanning {url}")
+
+            if is_nuclei_available():
+                async for raw in stream_nuclei_scan(url, "QUICK_SCAN"):
+                    coerced = _coerce_finding({**raw, "source": "nuclei"})
+                    if coerced:
+                        _record_finding(scan_id, coerced)
+                        count += 1
+                        _set_engine(scan_id, "nuclei", "running", count)
+            else:
+                for mock in _MOCK_FINDINGS:
+                    coerced = _coerce_finding({**mock, "host": url})
+                    if coerced:
+                        _record_finding(scan_id, coerced)
+                        count += 1
+                        _set_engine(scan_id, "nuclei", "running", count)
+
+        _set_engine(scan_id, "nuclei", "completed", count)
+        _append_log(scan_id, f"[Nuclei] Complete — {count} finding(s)")
+    except asyncio.CancelledError:
+        _set_engine(scan_id, "nuclei", "cancelled", count)
+        raise
+    except Exception as exc:
+        _set_engine(scan_id, "nuclei", "failed", count)
+        _append_log(scan_id, f"[Nuclei] Engine error: {exc}")
+        logger.error(f"[{scan_id}] Nuclei engine error: {exc}")
+
+
+async def _engine_vectra_checks(scan_id: str, live_assets: List[dict]) -> None:
+    """Engine 2 — Vectra Security Checks on all live assets. Failure is isolated."""
+    _set_engine(scan_id, "vectra_checks", "running")
+    count = 0
+    try:
+        _append_log(scan_id, f"[Vectra] Running security checks on {len(live_assets)} asset(s)")
+        findings = await run_checks_on_assets(live_assets)
+
+        for raw in findings:
+            if _SCANS.get(scan_id, {}).get("status") not in _ACTIVE_RUNNING:
+                break
+            coerced = _coerce_finding(raw)
+            if coerced:
+                _record_finding(scan_id, coerced)
+                count += 1
+
+        _set_engine(scan_id, "vectra_checks", "completed", count)
+        _append_log(scan_id, f"[Vectra] Complete — {count} finding(s)")
+    except asyncio.CancelledError:
+        _set_engine(scan_id, "vectra_checks", "cancelled", count)
+        raise
+    except Exception as exc:
+        _set_engine(scan_id, "vectra_checks", "failed", count)
+        _append_log(scan_id, f"[Vectra] Engine error: {exc}")
+        logger.error(f"[{scan_id}] Vectra checks engine error: {exc}")
+
+
+async def _engine_wpscan(scan_id: str, live_assets: List[dict]) -> None:
+    """Engine 4 — WPScan on WordPress assets. Skipped if no WP detected. Failure isolated."""
+    # Find WordPress assets
+    wp_assets = [a for a in live_assets if is_wordpress(a.get("technologies") or [])]
+
+    if not wp_assets:
+        _set_engine(scan_id, "wpscan", "skipped", 0)
+        _append_log(scan_id, "[WPScan] No WordPress assets detected — skipping")
+        return
+
+    if not is_wpscan_available():
+        _set_engine(scan_id, "wpscan", "skipped", 0)
+        _append_log(scan_id, "[WPScan] wpscan not installed — skipping")
+        return
+
+    _set_engine(scan_id, "wpscan", "running")
+    count = 0
+    try:
+        for asset in wp_assets:
+            url = asset.get("url") or f"https://{asset['subdomain']}"
+            _append_log(scan_id, f"[WPScan] Scanning WordPress at {url}")
+
+            async for raw in stream_wpscan(url):
+                if _SCANS.get(scan_id, {}).get("status") not in _ACTIVE_RUNNING:
+                    break
+                coerced = _coerce_finding(raw)
+                if coerced:
+                    _record_finding(scan_id, coerced)
+                    count += 1
+                    _set_engine(scan_id, "wpscan", "running", count)
+
+        _set_engine(scan_id, "wpscan", "completed", count)
+        _append_log(scan_id, f"[WPScan] Complete — {count} finding(s)")
+    except asyncio.CancelledError:
+        _set_engine(scan_id, "wpscan", "cancelled", count)
+        raise
+    except Exception as exc:
+        _set_engine(scan_id, "wpscan", "failed", count)
+        _append_log(scan_id, f"[WPScan] Engine error: {exc}")
+        logger.error(f"[{scan_id}] WPScan engine error: {exc}")
+
+
+async def _engine_cve_analysis(scan_id: str, live_assets: List[dict]) -> None:
+    """Engine 4 — CVE Analysis. Starts immediately after tech detection, parallel with scanners."""
+    _set_engine(scan_id, "cve_analysis", "running")
+    cve_count = 0
+    try:
+        _append_log(scan_id, "[CVE] Analysis Started")
+
+        # Extract versioned technologies from assets discovered in validating_assets
+        versioned_techs: List[tuple] = []
+        all_tech_names: set = set()
+        for asset in live_assets:
+            for tech in asset.get("technologies") or []:
+                name, version = parse_tech(tech)
+                if name:
+                    all_tech_names.add(name)
+                if version:
+                    versioned_techs.append((name, version, asset))
+
+        if all_tech_names:
+            sample = sorted(all_tech_names)[:10]
+            _append_log(scan_id, f"[CVE] Technologies Detected: {', '.join(sample)}")
+
+        if not versioned_techs:
+            _append_log(scan_id, "[CVE] No versioned technologies — CVE analysis skipped")
+            _set_engine(scan_id, "cve_analysis", "completed", 0)
+            return
+
+        _append_log(scan_id, f"[CVE] {len(versioned_techs)} versioned tech(s) queued for CVE lookup")
+
+        # Deduplicate (name, version) pairs across assets
+        tech_to_assets: dict = {}
+        for name, version, asset in versioned_techs:
+            key = f"{name.lower()}:{version}"
+            if key not in tech_to_assets:
+                tech_to_assets[key] = {"name": name, "version": version, "assets": []}
+            tech_to_assets[key]["assets"].append(asset)
+
+        cves: List[dict] = _SCANS[scan_id]["cves"]
+        seen_keys: set = set()
+        total_lookups = len(tech_to_assets)
+
+        for idx, (_, entry) in enumerate(tech_to_assets.items(), 1):
+            if _SCANS.get(scan_id, {}).get("status") not in _ACTIVE_RUNNING:
+                break
+
+            name         = entry["name"]
+            version      = entry["version"]
+            entry_assets = entry["assets"]
+
+            _append_log(scan_id, f"[CVE] [{idx}/{total_lookups}] {name} {version}")
+            tech_cves = await get_cves_for_technology(name, version)
+
+            if tech_cves:
+                ids_preview = ", ".join(c["cveId"] for c in tech_cves[:3])
+                _append_log(scan_id, f"[CVE] Local Matches Found: {name} {version} → {len(tech_cves)} CVE(s): {ids_preview}")
+
+                for raw in tech_cves:
+                    for asset in entry_assets:
+                        key = f"{raw['cveId']}_{asset['assetId']}"
+                        if key in seen_keys:
+                            continue
+                        seen_keys.add(key)
+                        cves.append({
+                            **raw,
+                            "id":          key,
+                            "assetId":     asset["assetId"],
+                            "assetUrl":    asset["url"],
+                            "discoveryId": scan_id,
+                            "createdAt":   _now_iso(),
+                        })
+                        cve_count += 1
+                        logger.info(f"[CVE] Saved: {raw['cveId']} → asset {asset['assetId']}")
+            else:
+                _append_log(scan_id, f"[CVE] NVD Fallback Triggered: {name} {version}")
+                logger.info(f"[CVE] No local match for {name} {version} — NVD was queried")
+
+            _update_scan(scan_id, total_cves=len(cves))
+
+        if cves:
+            top = sorted(cves, key=lambda x: x.get("cvssScore", 0), reverse=True)[:3]
+            top_ids = ", ".join(c["cveId"] for c in top)
+            _append_log(scan_id, f"[CVE] Results Saved — {len(cves)} CVEs found (top: {top_ids})")
+        else:
+            _append_log(scan_id, "[CVE] Results Saved — 0 CVEs found")
+
+        _append_log(scan_id, "[CVE] Analysis Completed")
+        _set_engine(scan_id, "cve_analysis", "completed", cve_count)
+
+    except asyncio.CancelledError:
+        _set_engine(scan_id, "cve_analysis", "cancelled", cve_count)
+        raise
+    except Exception as exc:
+        _set_engine(scan_id, "cve_analysis", "failed", cve_count)
+        _append_log(scan_id, f"[CVE] Engine error: {exc}")
+        logger.error(f"[{scan_id}] CVE engine error: {exc}")
+
+
 # ── Full Scan pipeline ────────────────────────────────────────────────
 
 async def _execute_full_scan(scan_id: str, target: str) -> None:
     """
-    Full Scan pipeline:
-      DISCOVERING_ASSETS  → Subfinder enumerates subdomains
-      VALIDATING_ASSETS   → httpx-toolkit probes hosts, detects technologies
-      SCANNING_ASSETS     → Nuclei scans all live assets
-      DETECTING_TECHNOLOGIES → Summarise tech stack (already done in stage 2)
-      CVE_ANALYSIS        → NVD CVE lookup per versioned technology
-      COMPLETED
+    Full Scan pipeline — Parallel Execution Engine:
+      Stage 1  DISCOVERING_ASSETS  — Subfinder enumerates subdomains
+      Stage 2  VALIDATING_ASSETS   — httpx-toolkit probes hosts + technology detection
+      Stage 3  SCANNING_ASSETS     — Parallel engine pool (all 4 start simultaneously):
+                                       Engine 1: Nuclei (vulnerability templates)
+                                       Engine 2: Vectra Security Checks (10 custom checks)
+                                       Engine 3: WPScan (if WordPress detected)
+                                       Engine 4: CVE Analysis (starts immediately after tech detection)
+      Stage 4  COMPLETED           — All engines done
     """
     started_at = time.monotonic()
 
-    # Extract bare domain from target URL
     parsed = urlparse(target if "://" in target else f"https://{target}")
     domain = parsed.hostname or target
 
@@ -282,7 +513,6 @@ async def _execute_full_scan(scan_id: str, target: str) -> None:
             subdomains.append(sub)
             _append_log(scan_id, f"Found: {sub}")
 
-        # Always include the root domain
         if domain not in subdomains:
             subdomains.insert(0, domain)
 
@@ -291,7 +521,7 @@ async def _execute_full_scan(scan_id: str, target: str) -> None:
 
         # ── Stage 2: VALIDATING_ASSETS ──────────────────────────────────
         _update_scan(scan_id, status="validating_assets", progress=25,
-                     currentStep=f"Probing {len(subdomains)} hosts")
+                     currentStep=f"Probing {len(subdomains)} hosts + technology detection")
         _append_log(scan_id, f"Probing {len(subdomains)} hosts with httpx-toolkit")
 
         assets: List[dict] = _SCANS[scan_id]["assets"]
@@ -321,13 +551,14 @@ async def _execute_full_scan(scan_id: str, target: str) -> None:
                 "ip":            result.get("ip"),
                 "contentType":   result.get("contentType"),
                 "technologies":  result.get("technologies") or [],
-                "cveCorrelated": True,   # Full Scan handles CVE correlation internally
+                "cveCorrelated": True,
                 "createdAt":     _now_iso(),
             }
             assets.append(asset)
             _update_scan(scan_id, total_assets=len(assets),
                          live_assets_count=sum(1 for a in assets if a["alive"]))
-            _append_log(scan_id, f"{sub} → {result.get('statusCode', '?')}")
+            tech_str = f" [{', '.join((result.get('technologies') or [])[:3])}]" if result.get('technologies') else ""
+            _append_log(scan_id, f"{sub} → {result.get('statusCode', '?')}{tech_str}")
 
         # Record offline subdomains
         for sub in subdomains:
@@ -354,140 +585,59 @@ async def _execute_full_scan(scan_id: str, target: str) -> None:
                      live_assets_count=len(live_assets), progress=45)
         _append_log(scan_id, f"Validation complete — {len(live_assets)}/{len(assets)} live")
 
-        # ── Stage 3: SCANNING_ASSETS ─────────────────────────────────────
-        _update_scan(scan_id, status="scanning_assets", progress=45,
-                     currentStep=f"Scanning {len(live_assets)} live assets")
-        _append_log(scan_id, f"Running Nuclei against {len(live_assets)} live assets")
+        # Technology summary for WPScan decision
+        all_techs: set[str] = set()
+        for a in live_assets:
+            for t in a.get("technologies") or []:
+                all_techs.add(t.split(":")[0])
+        if all_techs:
+            sample = sorted(all_techs)[:8]
+            _append_log(scan_id, f"Technologies: {', '.join(sample)}" +
+                        (f" (+{len(all_techs) - 8} more)" if len(all_techs) > 8 else ""))
 
-        for idx, asset in enumerate(live_assets):
-            if _SCANS[scan_id]["status"] not in _ACTIVE_RUNNING:
-                break
+        wp_detected = any(is_wordpress(a.get("technologies") or []) for a in live_assets)
+        if wp_detected:
+            _append_log(scan_id, "[Engine] WordPress detected — WPScan will run")
 
-            url = asset["url"] or f"https://{asset['subdomain']}"
-            _append_log(scan_id, f"[{idx + 1}/{len(live_assets)}] Scanning {url}")
+        # ── Stage 3: SCANNING_ASSETS — Parallel Engine Pool ─────────────
+        # All 4 engines launch simultaneously. CVE Analysis starts immediately
+        # after technology detection (Stage 2) without waiting for Nuclei or WPScan.
+        _update_scan(scan_id, status="scanning_assets", progress=50,
+                     currentStep=f"Running security engines on {len(live_assets)} assets")
 
-            if is_nuclei_available():
-                async for raw_finding in stream_nuclei_scan(url, "QUICK_SCAN"):
-                    coerced = _coerce_finding(raw_finding)
-                    if coerced:
-                        _record_finding(scan_id, coerced)
-            else:
-                for mock in _MOCK_FINDINGS:
-                    coerced = _coerce_finding({**mock, "host": url})
-                    if coerced:
-                        _record_finding(scan_id, coerced)
+        _append_log(scan_id, "[Engine] Launching 4 engines in parallel")
+        _append_log(scan_id, "[Engine 1] Nuclei — vulnerability templates")
+        _append_log(scan_id, "[Engine 2] Vectra — 10 custom security checks")
+        _append_log(scan_id, f"[Engine 3] WPScan — {'WordPress scan' if wp_detected else 'skipped (no WP)'}")
+        _append_log(scan_id, "[Engine 4] CVE Analysis — starts immediately after tech detection")
 
-            # Proportional progress through scanning stage (45 → 70)
-            pct = 45 + int((idx + 1) / max(len(live_assets), 1) * 25)
-            _update_scan(scan_id, progress=pct)
+        engine_results = await asyncio.gather(
+            _engine_nuclei(scan_id, live_assets),
+            _engine_vectra_checks(scan_id, live_assets),
+            _engine_wpscan(scan_id, live_assets),
+            _engine_cve_analysis(scan_id, live_assets),
+            return_exceptions=True,
+        )
+
+        # Isolated — log any unexpected engine exceptions (scan continues regardless)
+        for i, result in enumerate(engine_results):
+            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+                logger.error(f"[{scan_id}] Engine {i} exception: {result}")
 
         total_findings = _SCANS[scan_id]["total_findings"]
-        _append_log(scan_id, f"Scanning complete — {total_findings} findings")
+        total_cves     = len(_SCANS[scan_id]["cves"])
+        engines        = _SCANS[scan_id].get("engines", {})
+        nuclei_n  = engines.get("nuclei",        {}).get("findingCount", 0)
+        vectra_n  = engines.get("vectra_checks",  {}).get("findingCount", 0)
+        wpscan_n  = engines.get("wpscan",         {}).get("findingCount", 0)
+        cve_n     = engines.get("cve_analysis",   {}).get("findingCount", 0)
+        _append_log(scan_id, (
+            f"[Engine] All engines complete — {total_findings} findings, {total_cves} CVEs "
+            f"(Nuclei: {nuclei_n}, Vectra: {vectra_n}, WPScan: {wpscan_n}, CVE: {cve_n})"
+        ))
+        _update_scan(scan_id, progress=95)
 
-        # ── Stage 4: DETECTING_TECHNOLOGIES ─────────────────────────────
-        _update_scan(scan_id, status="detecting_technologies", progress=72,
-                     currentStep="Technology Detection")
-
-        # Separate versioned (name:version) from unversioned techs
-        all_tech_names: set = set()
-        versioned_techs: List[tuple] = []  # (name, version, asset)
-
-        for asset in live_assets:
-            for tech in asset.get("technologies") or []:
-                name, version = parse_tech(tech)
-                if name:
-                    all_tech_names.add(name)
-                if version:
-                    versioned_techs.append((name, version, asset))
-                    logger.info(f"[CVE] Version detected: {name} {version} on {asset.get('subdomain', asset.get('url'))}")
-                    _append_log(scan_id, f"[CVE] Version: {name} {version} on {asset.get('subdomain', asset.get('url', ''))}")
-                else:
-                    logger.debug(f"[CVE] No version for: {name}")
-
-        if all_tech_names:
-            _append_log(scan_id, f"[CVE] Detected {len(all_tech_names)} technologies across {len(live_assets)} live assets")
-            sample = sorted(all_tech_names)[:10]
-            _append_log(scan_id, f"[CVE] Tech stack: {', '.join(sample)}" +
-                        (f" (+{len(all_tech_names) - 10} more)" if len(all_tech_names) > 10 else ""))
-        else:
-            _append_log(scan_id, "[CVE] No technologies detected on live assets")
-
-        if versioned_techs:
-            _append_log(scan_id, f"[CVE] {len(versioned_techs)} versioned technologies ready for CVE lookup")
-        else:
-            _append_log(scan_id, "[CVE] No versioned technologies found — CVE correlation will be skipped")
-
-        await asyncio.sleep(0.3)
-
-        # ── Stage 5: CVE_ANALYSIS ────────────────────────────────────────
-        _update_scan(scan_id, status="cve_analysis", progress=80,
-                     currentStep="CVE Correlation")
-        _append_log(scan_id, "[CVE] Starting CVE correlation via NVD API")
-        logger.info(f"[CVE] Starting CVE analysis for scan {scan_id} — {len(versioned_techs)} versioned technologies")
-
-        cves: List[dict] = _SCANS[scan_id]["cves"]
-        seen_keys: set = set()  # deduplicate (cveId, assetId) pairs
-
-        # Deduplicate (name, version) pairs across assets to minimise NVD API calls
-        seen_lookups: set = set()
-        # Map (name, version) → list of assets that have this tech
-        tech_to_assets: dict = {}
-        for name, version, asset in versioned_techs:
-            key = f"{name.lower()}:{version}"
-            if key not in tech_to_assets:
-                tech_to_assets[key] = {"name": name, "version": version, "assets": []}
-            tech_to_assets[key]["assets"].append(asset)
-
-        total_lookups = len(tech_to_assets)
-        for idx, (lookup_key, entry) in enumerate(tech_to_assets.items(), 1):
-            if _SCANS[scan_id]["status"] not in _ACTIVE_RUNNING:
-                break
-
-            name    = entry["name"]
-            version = entry["version"]
-            assets  = entry["assets"]
-
-            _append_log(scan_id, f"[CVE] [{idx}/{total_lookups}] Searching NVD: {name} {version}")
-            logger.info(f"[CVE] [{idx}/{total_lookups}] NVD lookup: {name} {version}")
-
-            tech_cves = await get_cves_for_technology(name, version)
-
-            if tech_cves:
-                ids_preview = ", ".join(c["cveId"] for c in tech_cves[:3])
-                _append_log(scan_id, f"[CVE] {name} {version} → {len(tech_cves)} CVE(s): {ids_preview}{'...' if len(tech_cves) > 3 else ''}")
-                logger.info(f"[CVE] Matched {len(tech_cves)} CVEs for {name} {version}")
-
-                # Create one CVE document per (cveId, asset) pair
-                for raw in tech_cves:
-                    for asset in assets:
-                        key = f"{raw['cveId']}_{asset['assetId']}"
-                        if key in seen_keys:
-                            continue
-                        seen_keys.add(key)
-                        cves.append({
-                            **raw,
-                            "id":          key,
-                            "assetId":     asset["assetId"],
-                            "assetUrl":    asset["url"],
-                            "discoveryId": scan_id,
-                            "createdAt":   _now_iso(),
-                        })
-                        logger.info(f"[CVE] Saved: {raw['cveId']} → asset {asset['assetId']}")
-            else:
-                _append_log(scan_id, f"[CVE] {name} {version} → no CVEs found")
-
-            _update_scan(scan_id, total_cves=len(cves))
-
-        _update_scan(scan_id, total_cves=len(cves), progress=95)
-        if cves:
-            top = sorted(cves, key=lambda x: x.get("cvssScore", 0), reverse=True)[:3]
-            top_ids = ", ".join(c["cveId"] for c in top)
-            _append_log(scan_id, f"[CVE] Correlation complete — {len(cves)} CVEs (top: {top_ids})")
-        else:
-            _append_log(scan_id, "[CVE] Correlation complete — 0 CVEs found")
-        logger.info(f"[CVE] Correlation complete for scan {scan_id}: {len(cves)} CVE documents")
-
-        # ── Stage 6: COMPLETED ───────────────────────────────────────────
+        # ── Stage 4: COMPLETED ───────────────────────────────────────────
         elapsed = _format_duration(time.monotonic() - started_at)
         _update_scan(
             scan_id,
@@ -498,7 +648,7 @@ async def _execute_full_scan(scan_id: str, target: str) -> None:
         _append_log(
             scan_id,
             f"Full Scan completed in {elapsed} — "
-            f"{len(live_assets)} live assets, {total_findings} findings, {len(cves)} CVEs",
+            f"{len(live_assets)} live assets, {total_findings} findings, {total_cves} CVEs",
         )
         logger.info(f"[{scan_id}] Full Scan completed in {elapsed}")
 
@@ -570,6 +720,8 @@ async def stream_scan_events(scan_id: str) -> StreamingResponse:
                     "live_assets_count": scan.get("live_assets_count", 0),
                     "cves":             scan.get("cves", []),
                     "total_cves":       scan.get("total_cves", 0),
+                    # Per-engine tracking
+                    "engines":          scan.get("engines", {}),
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
 
@@ -643,33 +795,3 @@ async def get_all_findings() -> list:
             "info":     sum(1 for f in findings if f["severity"] == "info"),
         })
     return result
-
-
-@router.get("/findings/{scan_id}", tags=["Findings"])
-async def get_findings_by_scan(scan_id: str) -> dict:
-    if scan_id not in _SCANS:
-        raise HTTPException(status_code=404, detail="Scan not found")
-    scan = _SCANS[scan_id]
-    return {
-        "scanId":           scan_id,
-        "target":           scan["target"],
-        "scanProfile":      scan.get("scanProfile"),
-        "status":           scan["status"],
-        "findings":         scan["findings"],
-        "totalFindings":    scan["total_findings"],
-        "templatesExecuted": scan.get("templatesExecuted", 0),
-        "duration":         scan.get("duration"),
-    }
-
-
-@router.get("/queue", tags=["Scans"])
-async def get_queue() -> dict:
-    active = [
-        {"scanId": s["scanId"], "target": s["target"], "status": s["status"]}
-        for s in _SCANS.values() if s["status"] in _ACTIVE_RUNNING
-    ]
-    pending = [
-        {"scanId": sid, "target": t, "profile": p, "position": i + 1}
-        for i, (sid, t, p) in enumerate(_PENDING)
-    ]
-    return {"maxConcurrent": MAX_CONCURRENT_SCANS, "active": active, "pending": pending}

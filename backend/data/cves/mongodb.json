@@ -1,0 +1,92 @@
+[
+  {
+    "cveId": "CVE-2021-32050",
+    "technology": "MongoDB",
+    "affectedVersions": ["5.0.5", "4.4.11", "4.2.18"],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "MongoDB insufficient authorization check in certain aggregation pipeline operations allows authenticated users to access data outside their privileges.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-32050"]
+  },
+  {
+    "cveId": "CVE-2021-20330",
+    "technology": "MongoDB",
+    "affectedVersions": ["4.4.5", "4.2.12", "4.0.24"],
+    "severity": "MEDIUM",
+    "cvss": 5.9,
+    "exploitAvailable": false,
+    "description": "MongoDB Server denial of service via specially crafted aggregation pipeline query causing excessive memory allocation.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-20330"]
+  },
+  {
+    "cveId": "CVE-2019-2392",
+    "technology": "MongoDB",
+    "affectedVersions": ["4.2.1", "4.0.14", "3.6.15"],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "MongoDB Server denial of service via crafted aggregation pipeline causing server to use excessive memory.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-2392"]
+  },
+  {
+    "cveId": "CVE-2018-20802",
+    "technology": "MongoDB",
+    "affectedVersions": ["3.6.9", "3.4.19", "3.2.21"],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "MongoDB Server denial of service via crafted LDAP query when LDAP authentication is enabled.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-20802"]
+  },
+  {
+    "cveId": "CVE-2017-15535",
+    "technology": "MongoDB",
+    "affectedVersions": ["3.4.10", "3.2.18", "3.0.17"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "MongoDB Server authentication bypass via crafted SCRAM-SHA1 authentication message, allowing unauthenticated access.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2017-15535"]
+  },
+  {
+    "cveId": "CVE-2015-7882",
+    "technology": "MongoDB",
+    "affectedVersions": ["3.0.7", "2.6.11", "2.4.14"],
+    "severity": "HIGH",
+    "cvss": 8.1,
+    "exploitAvailable": false,
+    "description": "MongoDB LDAP bypass authentication vulnerability when LDAP servers have empty password allowed.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2015-7882"]
+  },
+  {
+    "cveId": "CVE-2019-20925",
+    "technology": "MongoDB",
+    "affectedVersions": ["4.2.2", "4.0.15", "3.6.16"],
+    "severity": "MEDIUM",
+    "cvss": 5.9,
+    "exploitAvailable": false,
+    "description": "MongoDB Server allows unauthenticated access to serverStatus command information exposing internal metrics.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-20925"]
+  },
+  {
+    "cveId": "CVE-2022-24902",
+    "technology": "MongoDB",
+    "affectedVersions": ["5.0.6", "4.4.13", "4.2.19"],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": false,
+    "description": "MongoDB Queryable Encryption feature information disclosure via side-channel timing analysis.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-24902"]
+  },
+  {
+    "cveId": "CVE-2023-21911",
+    "technology": "MongoDB",
+    "affectedVersions": ["6.0.4", "5.0.15", "4.4.21"],
+    "severity": "MEDIUM",
+    "cvss": 4.9,
+    "exploitAvailable": false,
+    "description": "MongoDB Server information disclosure via mongod log files when diagnostic commands are executed.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-21911"]
+  }
+]

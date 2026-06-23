@@ -1,0 +1,172 @@
+[
+  {
+    "cveId": "CVE-2021-22205",
+    "technology": "GitLab",
+    "affectedVersions": ["13.10", "13.9", "13.8", "13.7", "13.6", "12.9"],
+    "severity": "CRITICAL",
+    "cvss": 10.0,
+    "exploitAvailable": true,
+    "description": "Remote code execution in GitLab via image parsing using ExifTool, exploitable without authentication on publicly accessible instances.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-22205", "https://www.exploit-db.com/exploits/49951"]
+  },
+  {
+    "cveId": "CVE-2022-2884",
+    "technology": "GitLab",
+    "affectedVersions": ["15.3", "15.2", "15.1", "15.0"],
+    "severity": "CRITICAL",
+    "cvss": 9.9,
+    "exploitAvailable": false,
+    "description": "Remote code execution in GitLab via GitHub import feature through crafted repository data.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-2884"]
+  },
+  {
+    "cveId": "CVE-2022-1162",
+    "technology": "GitLab",
+    "affectedVersions": ["14.9", "14.8", "14.7"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Static password set during OmniAuth registration in GitLab allows authentication bypass for accounts using third-party sign-in.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-1162"]
+  },
+  {
+    "cveId": "CVE-2021-22214",
+    "technology": "GitLab",
+    "affectedVersions": ["13.12", "13.11", "13.10"],
+    "severity": "HIGH",
+    "cvss": 8.6,
+    "exploitAvailable": false,
+    "description": "SSRF in GitLab Webhook functionality allows attackers to make requests to internal services through crafted webhook URLs.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-22214"]
+  },
+  {
+    "cveId": "CVE-2020-10977",
+    "technology": "GitLab",
+    "affectedVersions": ["12.9", "12.8", "12.7", "12.6"],
+    "severity": "HIGH",
+    "cvss": 9.9,
+    "exploitAvailable": true,
+    "description": "Path traversal in GitLab Git repository management allows arbitrary file read on the server.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-10977", "https://www.exploit-db.com/exploits/48431"]
+  },
+  {
+    "cveId": "CVE-2019-5461",
+    "technology": "GitLab",
+    "affectedVersions": ["12.1", "12.0", "11.11"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "GitLab file read via path traversal in project import functionality.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-5461"]
+  },
+  {
+    "cveId": "CVE-2021-22175",
+    "technology": "GitLab",
+    "affectedVersions": ["13.11", "13.10", "13.9"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Denial of service in GitLab GraphQL API via maliciously crafted queries causing excessive resource consumption.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-22175"]
+  },
+  {
+    "cveId": "CVE-2022-3513",
+    "technology": "GitLab",
+    "affectedVersions": ["15.5", "15.4", "15.3"],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "GitLab markup rendering SSRF via crafted text that includes Mermaid diagrams with external URLs.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-3513"]
+  },
+  {
+    "cveId": "CVE-2023-2478",
+    "technology": "GitLab",
+    "affectedVersions": ["15.11", "15.10", "15.9"],
+    "severity": "HIGH",
+    "cvss": 8.1,
+    "exploitAvailable": false,
+    "description": "GitLab project maintainer can change a group runner's ownership to another group they control.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-2478"]
+  },
+  {
+    "cveId": "CVE-2023-3932",
+    "technology": "GitLab",
+    "affectedVersions": ["16.1", "16.0", "15.11"],
+    "severity": "HIGH",
+    "cvss": 7.7,
+    "exploitAvailable": false,
+    "description": "GitLab ClickJacking vulnerability in project pages allows UI redressing attacks against authenticated users.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-3932"]
+  },
+  {
+    "cveId": "CVE-2021-22262",
+    "technology": "GitLab",
+    "affectedVersions": ["14.2", "14.1", "14.0"],
+    "severity": "MEDIUM",
+    "cvss": 4.3,
+    "exploitAvailable": false,
+    "description": "Sensitive data exposure in GitLab build logs when CI job tokens are present in environment variables.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-22262"]
+  },
+  {
+    "cveId": "CVE-2022-0735",
+    "technology": "GitLab",
+    "affectedVersions": ["14.8", "14.7", "14.6"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Remote code execution in GitLab Runner via malicious Docker image in pipeline configuration.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-0735"]
+  },
+  {
+    "cveId": "CVE-2023-0921",
+    "technology": "GitLab",
+    "affectedVersions": ["15.9", "15.8", "15.7"],
+    "severity": "MEDIUM",
+    "cvss": 4.3,
+    "exploitAvailable": false,
+    "description": "GitLab information disclosure via group access tokens exposed in audit log.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-0921"]
+  },
+  {
+    "cveId": "CVE-2024-0402",
+    "technology": "GitLab",
+    "affectedVersions": ["16.9", "16.8", "16.7"],
+    "severity": "CRITICAL",
+    "cvss": 9.9,
+    "exploitAvailable": false,
+    "description": "GitLab arbitrary file write via workspace creation with specially crafted archive files leading to remote code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2024-0402"]
+  },
+  {
+    "cveId": "CVE-2023-7028",
+    "technology": "GitLab",
+    "affectedVersions": ["16.9", "16.8", "16.7", "16.6", "16.1"],
+    "severity": "CRITICAL",
+    "cvss": 10.0,
+    "exploitAvailable": true,
+    "description": "GitLab account takeover via password reset emails being sent to unverified email addresses.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-7028", "https://about.gitlab.com/releases/2024/01/11/critical-security-release-gitlab-16-7-2-released/"]
+  },
+  {
+    "cveId": "CVE-2022-4342",
+    "technology": "GitLab",
+    "affectedVersions": ["15.7", "15.6", "15.5"],
+    "severity": "HIGH",
+    "cvss": 7.6,
+    "exploitAvailable": false,
+    "description": "GitLab stored XSS in release notes allows attackers to inject malicious JavaScript.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-4342"]
+  },
+  {
+    "cveId": "CVE-2021-22201",
+    "technology": "GitLab",
+    "affectedVersions": ["13.11", "13.10", "13.9"],
+    "severity": "HIGH",
+    "cvss": 8.7,
+    "exploitAvailable": false,
+    "description": "GitLab SSRF via group import feature allows attackers to make server-side requests to internal resources.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-22201"]
+  }
+]

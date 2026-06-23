@@ -1,0 +1,202 @@
+[
+  {
+    "cveId": "CVE-2023-38408",
+    "technology": "OpenSSH",
+    "affectedVersions": ["9.3", "9.2", "9.1", "9.0", "8.9", "8.8"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Remote code execution in OpenSSH's ssh-agent via crafted PKCS#11 library loading when ssh-agent forwarding is enabled.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-38408", "https://www.qualys.com/2023/07/19/cve-2023-38408/rce-openssh-forwarded-ssh-agent.txt"]
+  },
+  {
+    "cveId": "CVE-2023-25136",
+    "technology": "OpenSSH",
+    "affectedVersions": ["9.1"],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "Double-free vulnerability in OpenSSH 9.1 pre-authentication in the options.kex_algorithms handling.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-25136"]
+  },
+  {
+    "cveId": "CVE-2021-41617",
+    "technology": "OpenSSH",
+    "affectedVersions": ["8.7", "8.6", "8.5", "8.4", "8.3", "8.2", "8.1", "8.0", "7.9", "7.8"],
+    "severity": "HIGH",
+    "cvss": 7.0,
+    "exploitAvailable": false,
+    "description": "OpenSSH privilege escalation via sshd AuthorizedKeysCommand or AuthorizedPrincipalsCommand when configured with groups.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-41617"]
+  },
+  {
+    "cveId": "CVE-2020-15778",
+    "technology": "OpenSSH",
+    "affectedVersions": ["8.3", "8.2", "8.1", "8.0", "7.9"],
+    "severity": "HIGH",
+    "cvss": 7.8,
+    "exploitAvailable": true,
+    "description": "Command injection in OpenSSH scp via backtick characters in file names when used with shell expansion.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-15778"]
+  },
+  {
+    "cveId": "CVE-2019-6111",
+    "technology": "OpenSSH",
+    "affectedVersions": ["7.9", "7.8", "7.7", "7.6"],
+    "severity": "MEDIUM",
+    "cvss": 5.9,
+    "exploitAvailable": false,
+    "description": "OpenSSH scp allows remote SSH servers to overwrite arbitrary files on client system via crafted object name in server-to-client or client-to-client copy.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-6111"]
+  },
+  {
+    "cveId": "CVE-2019-6110",
+    "technology": "OpenSSH",
+    "affectedVersions": ["7.9", "7.8", "7.7", "7.6"],
+    "severity": "MEDIUM",
+    "cvss": 5.9,
+    "exploitAvailable": false,
+    "description": "OpenSSH scp displays ANSI escape sequences from remote server in error messages, potentially altering terminal output.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-6110"]
+  },
+  {
+    "cveId": "CVE-2019-6109",
+    "technology": "OpenSSH",
+    "affectedVersions": ["7.9", "7.8", "7.7", "7.6"],
+    "severity": "MEDIUM",
+    "cvss": 5.9,
+    "exploitAvailable": false,
+    "description": "OpenSSH scp missing character encoding in progress display allows remote server to manipulate client terminal.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-6109"]
+  },
+  {
+    "cveId": "CVE-2018-20685",
+    "technology": "OpenSSH",
+    "affectedVersions": ["7.9", "7.8", "7.7"],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": false,
+    "description": "OpenSSH scp allows remote SSH servers to bypass intended access restrictions via a dot-dot sequence in a destination file name.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-20685"]
+  },
+  {
+    "cveId": "CVE-2018-15919",
+    "technology": "OpenSSH",
+    "affectedVersions": ["7.8", "7.7", "7.6", "7.5"],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": false,
+    "description": "Username enumeration via timing differences in auth-gss2.c in OpenSSH before 7.9.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-15919"]
+  },
+  {
+    "cveId": "CVE-2018-15473",
+    "technology": "OpenSSH",
+    "affectedVersions": ["7.7", "7.6", "7.5", "7.4", "7.3", "7.2"],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": true,
+    "description": "Username enumeration in OpenSSH through 7.7 via a timing side channel when an invalid username is provided.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-15473", "https://www.exploit-db.com/exploits/45233"]
+  },
+  {
+    "cveId": "CVE-2016-10010",
+    "technology": "OpenSSH",
+    "affectedVersions": ["7.4", "7.3", "7.2", "7.1"],
+    "severity": "HIGH",
+    "cvss": 7.0,
+    "exploitAvailable": false,
+    "description": "OpenSSH privilege escalation via Unix domain socket forwarding when UsePrivilegeSeparation is disabled.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2016-10010"]
+  },
+  {
+    "cveId": "CVE-2016-10009",
+    "technology": "OpenSSH",
+    "affectedVersions": ["7.4", "7.3", "7.2"],
+    "severity": "HIGH",
+    "cvss": 7.3,
+    "exploitAvailable": false,
+    "description": "Untrusted search path vulnerability in ssh-agent in OpenSSH allows remote attackers to execute arbitrary code via a crafted PKCS#11 module.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2016-10009"]
+  },
+  {
+    "cveId": "CVE-2016-6515",
+    "technology": "OpenSSH",
+    "affectedVersions": ["7.2", "7.1", "7.0", "6.9"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Auth-password off-by-one error in OpenSSH 7.2p2 and earlier allows remote attackers to cause a denial of service via a long password string.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2016-6515"]
+  },
+  {
+    "cveId": "CVE-2016-6210",
+    "technology": "OpenSSH",
+    "affectedVersions": ["7.2", "7.1", "7.0", "6.9", "6.8"],
+    "severity": "MEDIUM",
+    "cvss": 5.9,
+    "exploitAvailable": false,
+    "description": "OpenSSH before 7.3 allows remote attackers to determine if a user exists via a timing side-channel in the authentication response.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2016-6210"]
+  },
+  {
+    "cveId": "CVE-2015-5600",
+    "technology": "OpenSSH",
+    "affectedVersions": ["6.9", "6.8", "6.7", "6.6"],
+    "severity": "HIGH",
+    "cvss": 8.5,
+    "exploitAvailable": false,
+    "description": "OpenSSH keyboard-interactive authentication allows remote attackers to bypass MaxAuthTries by sending many keyboard-interactive authentication requests.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2015-5600"]
+  },
+  {
+    "cveId": "CVE-2014-2532",
+    "technology": "OpenSSH",
+    "affectedVersions": ["6.6", "6.5", "6.4", "6.3", "6.2"],
+    "severity": "MEDIUM",
+    "cvss": 5.8,
+    "exploitAvailable": false,
+    "description": "OpenSSH wildcard expansion in AcceptEnv keyword allows bypassing restrictions by exploiting wildcard matching.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2014-2532"]
+  },
+  {
+    "cveId": "CVE-2016-0777",
+    "technology": "OpenSSH",
+    "affectedVersions": ["7.1", "7.0", "6.9", "6.8"],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "OpenSSH roaming feature leaks private key material via UseRoaming option in client configuration.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2016-0777"]
+  },
+  {
+    "cveId": "CVE-2016-0778",
+    "technology": "OpenSSH",
+    "affectedVersions": ["7.1", "7.0", "6.9", "6.8"],
+    "severity": "HIGH",
+    "cvss": 8.1,
+    "exploitAvailable": false,
+    "description": "Heap-based buffer overflow in OpenSSH roaming feature allows remote SSH servers to execute arbitrary code via crafted response.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2016-0778"]
+  },
+  {
+    "cveId": "CVE-2023-48795",
+    "technology": "OpenSSH",
+    "affectedVersions": ["9.5", "9.4", "9.3", "9.2", "9.1", "9.0", "8.9"],
+    "severity": "MEDIUM",
+    "cvss": 5.9,
+    "exploitAvailable": false,
+    "description": "Terrapin attack: OpenSSH prefix truncation attack that allows a MitM to downgrade the connection's security by manipulating handshake messages.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-48795", "https://terrapin-attack.com"]
+  },
+  {
+    "cveId": "CVE-2021-28041",
+    "technology": "OpenSSH",
+    "affectedVersions": ["8.5", "8.4", "8.3"],
+    "severity": "MEDIUM",
+    "cvss": 4.6,
+    "exploitAvailable": false,
+    "description": "Double-free in ssh-agent in OpenSSH 8.2 through 8.4 when handling PKCS#11 provider requests.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-28041"]
+  }
+]

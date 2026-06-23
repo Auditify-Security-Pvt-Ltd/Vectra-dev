@@ -24,12 +24,14 @@ from typing import List, Optional
 from urllib.parse import urlencode
 
 from utils.logger import get_logger
+from cve import cve_loader
 
 logger = get_logger(__name__)
 
 NVD_BASE    = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 CIRCL_BASE  = "https://vulnerability.circl.lu/api/cve"
 NVD_API_KEY = os.getenv("NVD_API_KEY", "")
+CVE_MODE    = os.getenv("CVE_MODE", "hybrid")   # local | nvd | hybrid
 
 # ── Rate-limiting ─────────────────────────────────────────────────────
 _nvd_lock          = asyncio.Lock()
@@ -658,11 +660,12 @@ async def _nvd_search(tech_name: str, version: str) -> List[dict]:
 
 async def get_cves_for_technology(tech_name: str, version: str) -> List[dict]:
     """
-    Return CVEs for tech+version using a three-tier lookup:
+    Return CVEs for tech+version.
 
-      Tier 1: Embedded local database (instant, covers well-known CVEs)
-      Tier 2: NVD API (when NVD_API_KEY is set or reachable without auth)
-      Tier 3: CIRCL CVE API (enriches embedded results with live data when available)
+    CVE_MODE controls lookup strategy:
+      local  — local JSON DB only (instant, no internet)
+      nvd    — NVD API only
+      hybrid — local JSON DB → embedded DB → NVD (default)
     """
     cache_key = f"{tech_name.lower()}:{version}"
 
@@ -678,26 +681,46 @@ async def get_cves_for_technology(tech_name: str, version: str) -> List[dict]:
         return []
 
     _CVE_FETCHING.add(cache_key)
-    logger.info(f"[CVE] Looking up: {tech_name} {version}")
+    logger.info(f"[CVE] Looking up {tech_name} {version} (mode={CVE_MODE})")
 
     try:
         results: List[dict] = []
 
-        # Tier 1: Embedded DB
-        results = _lookup_embedded(tech_name, version)
+        if CVE_MODE == "nvd":
+            # NVD only — skip all local sources
+            if NVD_API_KEY:
+                results = await _nvd_search(tech_name, version)
+            else:
+                nvd_results = await _nvd_search(tech_name, version)
+                if nvd_results:
+                    results = nvd_results
 
-        # Tier 2: NVD (only if key is set, to avoid hammering)
-        if not results and NVD_API_KEY:
-            logger.info(f"[CVE] NVD API lookup (key configured): {tech_name} {version}")
-            results = await _nvd_search(tech_name, version)
+        elif CVE_MODE == "local":
+            # Local JSON DB, then embedded DB fallback
+            results = cve_loader.lookup(tech_name, version)
+            if not results:
+                results = _lookup_embedded(tech_name, version)
 
-        # Tier 3: NVD without key (best-effort — may be blocked by Cloudflare)
-        if not results and not NVD_API_KEY:
-            logger.info(f"[CVE] NVD API lookup (no key — may fail): {tech_name} {version}")
-            nvd_results = await _nvd_search(tech_name, version)
-            if nvd_results:
-                results = nvd_results
-                logger.info(f"[CVE] NVD (no key) returned {len(results)} CVEs for {tech_name} {version}")
+        else:
+            # hybrid (default): local JSON → embedded DB → NVD
+            # Tier 1: Local JSON CVE database (fast, primary source)
+            results = cve_loader.lookup(tech_name, version)
+
+            # Tier 2: Embedded DB (31 curated entries for edge cases)
+            if not results:
+                results = _lookup_embedded(tech_name, version)
+
+            # Tier 3: NVD API with key
+            if not results and NVD_API_KEY:
+                logger.info(f"[CVE] NVD API lookup (key configured): {tech_name} {version}")
+                results = await _nvd_search(tech_name, version)
+
+            # Tier 4: NVD without key (best-effort — may be blocked by Cloudflare)
+            if not results and not NVD_API_KEY:
+                logger.info(f"[CVE] NVD API lookup (no key — may fail): {tech_name} {version}")
+                nvd_results = await _nvd_search(tech_name, version)
+                if nvd_results:
+                    results = nvd_results
 
         if results:
             ids = [r["cveId"] for r in results[:5]]

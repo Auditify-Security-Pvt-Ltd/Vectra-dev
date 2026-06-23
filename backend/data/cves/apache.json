@@ -1,0 +1,382 @@
+[
+  {
+    "cveId": "CVE-2021-41773",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.49"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Path traversal and remote code execution in Apache HTTP Server 2.4.49 via mod_cgi and aliased paths, allowing access to files outside the document root.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-41773", "https://httpd.apache.org/security/vulnerabilities_24.html"]
+  },
+  {
+    "cveId": "CVE-2021-42013",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.49", "2.4.50"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Incomplete fix for CVE-2021-41773 in Apache HTTP Server 2.4.49 and 2.4.50, allowing path traversal and RCE via double-encoded path separators.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-42013"]
+  },
+  {
+    "cveId": "CVE-2021-34798",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.48", "2.4.46", "2.4.43"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "NULL pointer dereference in Apache HTTP Server 2.4.48 and earlier causing a denial of service when processing malformed requests.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-34798"]
+  },
+  {
+    "cveId": "CVE-2021-26691",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.46", "2.4.43", "2.4.41"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Heap overflow in mod_session_crypto in Apache HTTP Server 2.4.0 to 2.4.46 when a specially crafted SessionHeader value is sent.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-26691"]
+  },
+  {
+    "cveId": "CVE-2021-26690",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.46", "2.4.43"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "NULL pointer dereference in mod_session in Apache HTTP Server 2.4.0 to 2.4.46 via a crafted Cookie header, causing denial of service.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-26690"]
+  },
+  {
+    "cveId": "CVE-2021-44790",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.51", "2.4.50", "2.4.49"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Buffer overflow in mod_lua multipart parser in Apache HTTP Server 2.4.51 and earlier, potentially allowing remote code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-44790"]
+  },
+  {
+    "cveId": "CVE-2021-40438",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.48", "2.4.46", "2.4.43"],
+    "severity": "CRITICAL",
+    "cvss": 9.0,
+    "exploitAvailable": true,
+    "description": "Server-side request forgery (SSRF) in mod_proxy in Apache HTTP Server 2.4.48 and earlier via a crafted request URI.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-40438"]
+  },
+  {
+    "cveId": "CVE-2021-39275",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.48", "2.4.46"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Out-of-bounds write in ap_escape_quotes in Apache HTTP Server 2.4.48 and earlier via malicious input from modules.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-39275"]
+  },
+  {
+    "cveId": "CVE-2020-11984",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.43", "2.4.41", "2.4.39"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Buffer overflow in mod_proxy_uwsgi in Apache HTTP Server 2.4.32 to 2.4.44, potentially leading to information disclosure or RCE.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-11984"]
+  },
+  {
+    "cveId": "CVE-2020-11993",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.43", "2.4.41"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "HTTP/2 logging issue in Apache HTTP Server 2.4.20 to 2.4.43 causing memory corruption and denial of service.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-11993"]
+  },
+  {
+    "cveId": "CVE-2020-9490",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.43", "2.4.41"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "HTTP/2 Cache-Digest header handling in Apache HTTP Server 2.4.20 to 2.4.43 can cause a crash via a specially crafted value.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-9490"]
+  },
+  {
+    "cveId": "CVE-2019-0211",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.38", "2.4.37", "2.4.34"],
+    "severity": "HIGH",
+    "cvss": 7.8,
+    "exploitAvailable": true,
+    "description": "Apache HTTP Server 2.4.17 to 2.4.38 privilege escalation from a worker process (CGI script or module) to the parent process running as root via the scoreboard.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-0211"]
+  },
+  {
+    "cveId": "CVE-2019-0215",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.38", "2.4.37"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Access control bypass in mod_ssl in Apache HTTP Server 2.4.37 and 2.4.38 with per-location client certificate verification and TLS 1.3.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-0215"]
+  },
+  {
+    "cveId": "CVE-2019-0217",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.38", "2.4.37", "2.4.34"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Access control bypass in mod_auth_digest in Apache HTTP Server 2.4.38 and earlier due to a race condition, allowing a valid user to impersonate another.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-0217"]
+  },
+  {
+    "cveId": "CVE-2019-10097",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.39", "2.4.38"],
+    "severity": "HIGH",
+    "cvss": 7.2,
+    "exploitAvailable": false,
+    "description": "Stack buffer overflow and NULL pointer dereference in mod_remoteip in Apache HTTP Server 2.4.32 to 2.4.39 via trusted intermediary proxies.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-10097"]
+  },
+  {
+    "cveId": "CVE-2018-1312",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.29", "2.4.27", "2.4.25"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "mod_auth_digest in Apache HTTP Server 2.4.0 to 2.4.29 reuses the client nonce, allowing replay attacks across servers in a cluster.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-1312"]
+  },
+  {
+    "cveId": "CVE-2017-15715",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.29", "2.4.27", "2.4.25"],
+    "severity": "HIGH",
+    "cvss": 8.1,
+    "exploitAvailable": false,
+    "description": "Apache HTTP Server 2.4.0 to 2.4.29 expression specified in FilesMatch could match a malicious filename ending in a newline, bypassing upload restrictions.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2017-15715"]
+  },
+  {
+    "cveId": "CVE-2017-9798",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.27", "2.4.25", "2.2.34"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": true,
+    "description": "Optionsbleed: use-after-free in Apache HTTP Server when handling Limit directives in .htaccess, leaking memory via the OPTIONS method.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2017-9798"]
+  },
+  {
+    "cveId": "CVE-2017-7679",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.25", "2.4.23", "2.2.32"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "mod_mime in Apache HTTP Server 2.2.x to 2.2.32 and 2.4.x to 2.4.25 can read one byte past the end of a buffer when sending a malicious Content-Type response header.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2017-7679"]
+  },
+  {
+    "cveId": "CVE-2017-3167",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.25", "2.4.23"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Use of ap_get_basic_auth_pw by third-party modules outside the authentication phase in Apache HTTP Server 2.2.x to 2.2.32 and 2.4.x to 2.4.25 may lead to authentication bypass.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2017-3167"]
+  },
+  {
+    "cveId": "CVE-2017-3169",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.25", "2.4.23"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "mod_ssl in Apache HTTP Server 2.2.x to 2.2.32 and 2.4.x to 2.4.25 may dereference a NULL pointer when third-party modules call ap_hook_process_connection during an HTTP request to an HTTPS port.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2017-3169"]
+  },
+  {
+    "cveId": "CVE-2016-8743",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.23", "2.4.20", "2.2.31"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Apache HTTP Server before 2.2.32 and 2.4.x before 2.4.25 does not properly enforce HTTP request grammar, allowing request smuggling or response splitting with proxies.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2016-8743"]
+  },
+  {
+    "cveId": "CVE-2016-5387",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.23", "2.4.20", "2.2.31"],
+    "severity": "HIGH",
+    "cvss": 8.1,
+    "exploitAvailable": true,
+    "description": "httpoxy: Apache HTTP Server through 2.4.23 uses the Proxy header from a request to set the HTTP_PROXY environment variable for CGI scripts, enabling MITM redirection.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2016-5387"]
+  },
+  {
+    "cveId": "CVE-2014-0226",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.9", "2.4.7", "2.2.27"],
+    "severity": "HIGH",
+    "cvss": 8.1,
+    "exploitAvailable": true,
+    "description": "Race condition in mod_status in Apache HTTP Server before 2.4.10 allows attackers to cause a heap-based buffer overflow and possibly execute arbitrary code.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2014-0226"]
+  },
+  {
+    "cveId": "CVE-2014-0098",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.7", "2.2.26"],
+    "severity": "MEDIUM",
+    "cvss": 5.0,
+    "exploitAvailable": false,
+    "description": "The log_cookie function in mod_log_config in Apache HTTP Server before 2.4.8 allows remote attackers to cause a denial of service via a crafted truncated cookie.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2014-0098"]
+  },
+  {
+    "cveId": "CVE-2013-2249",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.4", "2.4.3"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "mod_session_dbd in Apache HTTP Server before 2.4.5 does not properly maintain a session ID, with possible security implications for session persistence.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2013-2249"]
+  },
+  {
+    "cveId": "CVE-2012-0021",
+    "technology": "Apache",
+    "affectedVersions": ["2.2.21", "2.2.20"],
+    "severity": "MEDIUM",
+    "cvss": 5.0,
+    "exploitAvailable": false,
+    "description": "The log_cookie function in mod_log_config in Apache HTTP Server 2.2.17 to 2.2.21 allows denial of service via a cookie that lacks a value.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2012-0021"]
+  },
+  {
+    "cveId": "CVE-2011-3192",
+    "technology": "Apache",
+    "affectedVersions": ["2.2.19", "2.2.17", "2.0.64"],
+    "severity": "HIGH",
+    "cvss": 7.8,
+    "exploitAvailable": true,
+    "description": "Apache Killer: the byterange filter in Apache HTTP Server 1.3.x, 2.0.x through 2.0.64, and 2.2.x through 2.2.19 allows remote denial of service via a Range header with many overlapping ranges.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2011-3192"]
+  },
+  {
+    "cveId": "CVE-2010-0425",
+    "technology": "Apache",
+    "affectedVersions": ["2.2.14", "2.0.63"],
+    "severity": "HIGH",
+    "cvss": 10.0,
+    "exploitAvailable": false,
+    "description": "mod_isapi in Apache HTTP Server 2.0.37 to 2.2.14 on Windows allows remote code execution via a crafted request that triggers unloading of an ISAPI .dll module.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2010-0425"]
+  },
+  {
+    "cveId": "CVE-2022-22720",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.52", "2.4.51", "2.4.50"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Apache HTTP Server 2.4.52 and earlier fails to close inbound connections when discarding some request bodies, exposing the server to HTTP request smuggling.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-22720"]
+  },
+  {
+    "cveId": "CVE-2022-22721",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.52", "2.4.51"],
+    "severity": "CRITICAL",
+    "cvss": 9.1,
+    "exploitAvailable": false,
+    "description": "If LimitXMLRequestBody is set very high in Apache HTTP Server 2.4.52 and earlier, an integer overflow in mod_dav can lead to a buffer overflow on 32-bit systems.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-22721"]
+  },
+  {
+    "cveId": "CVE-2022-23943",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.52", "2.4.51"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Out-of-bounds write in mod_sed in Apache HTTP Server 2.4.52 and earlier allows an attacker to overwrite heap memory with attacker-controlled data.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-23943"]
+  },
+  {
+    "cveId": "CVE-2022-31813",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.53", "2.4.52"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "mod_proxy in Apache HTTP Server 2.4.53 and earlier may fail to send X-Forwarded-* headers to the origin server, allowing authentication bypass based on those headers.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-31813"]
+  },
+  {
+    "cveId": "CVE-2023-25690",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.55", "2.4.54", "2.4.53"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "HTTP request smuggling in Apache HTTP Server 2.4.0 to 2.4.55 with certain mod_proxy and RewriteRule/ProxyPassMatch configurations using non-specific substitutions.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-25690"]
+  },
+  {
+    "cveId": "CVE-2023-27522",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.55", "2.4.54"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "HTTP response splitting in mod_proxy_uwsgi in Apache HTTP Server 2.4.30 to 2.4.55, allowing request smuggling to a backend via special characters in the origin response header.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-27522"]
+  },
+  {
+    "cveId": "CVE-2024-38476",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.59", "2.4.58"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Apache HTTP Server 2.4.59 and earlier may use backend application output to run local handlers via internal redirect, allowing code execution or SSRF with untrusted content.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2024-38476"]
+  },
+  {
+    "cveId": "CVE-2024-38473",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.59", "2.4.58"],
+    "severity": "HIGH",
+    "cvss": 8.1,
+    "exploitAvailable": false,
+    "description": "Encoding problem in mod_proxy in Apache HTTP Server 2.4.59 and earlier allows request URLs with incorrect encoding to be sent to backend services, bypassing authentication.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2024-38473"]
+  },
+  {
+    "cveId": "CVE-2024-27316",
+    "technology": "Apache",
+    "affectedVersions": ["2.4.58", "2.4.57"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "HTTP/2 CONTINUATION flood: Apache HTTP Server with mod_http2 may exhaust memory when handling a stream of CONTINUATION frames without END_HEADERS, causing denial of service.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2024-27316"]
+  }
+]

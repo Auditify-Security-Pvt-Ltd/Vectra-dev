@@ -1,0 +1,202 @@
+[
+  {
+    "cveId": "CVE-2024-23897",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.441", "2.440", "2.439", "2.432"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Jenkins CLI arbitrary file read vulnerability allows unauthenticated attackers to read arbitrary files and may lead to remote code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2024-23897", "https://www.jenkins.io/security/advisory/2024-01-24/"]
+  },
+  {
+    "cveId": "CVE-2024-23898",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.441", "2.440", "2.439"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Jenkins WebSocket CLI endpoint allows cross-site WebSocket hijacking via missing origin verification.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2024-23898"]
+  },
+  {
+    "cveId": "CVE-2023-27898",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.393", "2.392", "2.387"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Reflected XSS vulnerability in Jenkins Update Center that can be exploited by attackers to execute JavaScript in admin context.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-27898"]
+  },
+  {
+    "cveId": "CVE-2022-0538",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.333", "2.332", "2.325"],
+    "severity": "HIGH",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Jenkins deserialization vulnerability in Java serialization handling allows remote attackers to execute arbitrary code.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-0538"]
+  },
+  {
+    "cveId": "CVE-2021-21685",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.319", "2.317", "2.314"],
+    "severity": "CRITICAL",
+    "cvss": 9.1,
+    "exploitAvailable": false,
+    "description": "Jenkins FilePath.listFiles() agent-to-controller security bypass allows agents to read arbitrary files on the controller.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-21685"]
+  },
+  {
+    "cveId": "CVE-2021-21686",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.319", "2.317", "2.314"],
+    "severity": "HIGH",
+    "cvss": 8.1,
+    "exploitAvailable": false,
+    "description": "Jenkins file.createTempFile() agent-to-controller security bypass allows agents to create arbitrary files on the controller.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-21686"]
+  },
+  {
+    "cveId": "CVE-2021-21687",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.319", "2.317", "2.314"],
+    "severity": "HIGH",
+    "cvss": 9.1,
+    "exploitAvailable": false,
+    "description": "Jenkins FilePath.untar() agent-to-controller security bypass allows agents to create symbolic links on the controller.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-21687"]
+  },
+  {
+    "cveId": "CVE-2019-1003000",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.160", "2.150", "2.140"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": true,
+    "description": "Jenkins Script Security plugin sandbox bypass allows authenticated users with low privileges to execute arbitrary code via pipeline scripts.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-1003000", "https://www.exploit-db.com/exploits/46572"]
+  },
+  {
+    "cveId": "CVE-2019-1003029",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.164", "2.160", "2.150"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Jenkins Script Security plugin sandbox bypass via Groovy method calls allows remote code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-1003029"]
+  },
+  {
+    "cveId": "CVE-2018-1000861",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.153", "2.150", "2.138"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Jenkins remote code execution via Stapler web framework and class construction gadget allowing unauthenticated RCE.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-1000861", "https://www.exploit-db.com/exploits/46059"]
+  },
+  {
+    "cveId": "CVE-2018-1000110",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.107", "2.100", "2.89"],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": false,
+    "description": "Jenkins user enumeration via timing differences in authentication response when checking valid vs invalid usernames.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-1000110"]
+  },
+  {
+    "cveId": "CVE-2017-1000353",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.57", "2.55", "2.46"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Java deserialization vulnerability in Jenkins Java API allows unauthenticated remote code execution via crafted Java object.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2017-1000353", "https://www.exploit-db.com/exploits/41965"]
+  },
+  {
+    "cveId": "CVE-2016-9299",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.31", "2.30", "2.19"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Jenkins Remoting code execution via Java deserialization gadget when processing CLI connections.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2016-9299"]
+  },
+  {
+    "cveId": "CVE-2015-8103",
+    "technology": "Jenkins",
+    "affectedVersions": ["1.638", "1.637", "1.625"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Jenkins remote code execution via Java deserialization in the Jenkins CLI, exploitable without authentication.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2015-8103", "https://www.exploit-db.com/exploits/38983"]
+  },
+  {
+    "cveId": "CVE-2023-27905",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.393", "2.392"],
+    "severity": "HIGH",
+    "cvss": 8.0,
+    "exploitAvailable": false,
+    "description": "Jenkins Update Center plugin XSS vulnerability via malicious update site response.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-27905"]
+  },
+  {
+    "cveId": "CVE-2020-2100",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.219", "2.218", "2.210"],
+    "severity": "HIGH",
+    "cvss": 8.6,
+    "exploitAvailable": false,
+    "description": "Jenkins amplified DNS-based DDoS attack via UDP discovery broadcast (jenkins.udp broadcast).",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-2100"]
+  },
+  {
+    "cveId": "CVE-2020-2109",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.219", "2.218", "2.210"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Jenkins Kubernetes plugin environment variable injection allows agents to override cluster credentials.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-2109"]
+  },
+  {
+    "cveId": "CVE-2019-10475",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.193", "2.190", "2.183"],
+    "severity": "MEDIUM",
+    "cvss": 6.1,
+    "exploitAvailable": false,
+    "description": "Reflected XSS in Jenkins build output page allows attackers to execute JavaScript via crafted URL.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-10475"]
+  },
+  {
+    "cveId": "CVE-2022-29047",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.344", "2.340", "2.332"],
+    "severity": "HIGH",
+    "cvss": 7.3,
+    "exploitAvailable": false,
+    "description": "Jenkins Pipeline: Shared Groovy Libraries plugin allows untrusted code to be executed as sandboxed Pipeline code.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-29047"]
+  },
+  {
+    "cveId": "CVE-2023-32977",
+    "technology": "Jenkins",
+    "affectedVersions": ["2.415", "2.414", "2.410"],
+    "severity": "HIGH",
+    "cvss": 7.1,
+    "exploitAvailable": false,
+    "description": "Jenkins Pipeline Groovy plugin cross-site WebSocket hijacking allows CSRF attacks on Pipeline execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-32977"]
+  }
+]

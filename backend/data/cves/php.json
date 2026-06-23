@@ -1,0 +1,182 @@
+[
+  {
+    "cveId": "CVE-2024-4577",
+    "technology": "PHP",
+    "affectedVersions": ["8.3", "8.2", "8.1", "8.0", "7.4", "7.3"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "Argument injection in PHP CGI mode on Windows via Best-Fit character encoding conversion, allowing remote code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2024-4577", "https://devco.re/blog/2024/06/06/security-alert-cve-2024-4577-php-cgi-argument-injection-vulnerability/"]
+  },
+  {
+    "cveId": "CVE-2023-3824",
+    "technology": "PHP",
+    "affectedVersions": ["8.3", "8.2", "8.1", "8.0"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Buffer overflow in PHP's PHAR extension when reading a chunk from a PHAR file, potentially leading to remote code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-3824"]
+  },
+  {
+    "cveId": "CVE-2022-31628",
+    "technology": "PHP",
+    "affectedVersions": ["8.1", "8.0", "7.4", "7.3"],
+    "severity": "HIGH",
+    "cvss": 7.8,
+    "exploitAvailable": false,
+    "description": "PHP phar wrapper treats paths with trailing dots as directories, allowing directory traversal.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-31628"]
+  },
+  {
+    "cveId": "CVE-2022-31626",
+    "technology": "PHP",
+    "affectedVersions": ["8.1", "8.0", "7.4"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Buffer overflow in PHP mysqlnd when server sends an overly long password to client, causing potential code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-31626"]
+  },
+  {
+    "cveId": "CVE-2022-31625",
+    "technology": "PHP",
+    "affectedVersions": ["8.1", "8.0", "7.4"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "Use-after-free in PHP Postgres module pg_query/pg_send_query, potentially leading to remote code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-31625"]
+  },
+  {
+    "cveId": "CVE-2021-21707",
+    "technology": "PHP",
+    "affectedVersions": ["8.0", "7.4", "7.3", "7.2"],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": false,
+    "description": "Special character handling in PHP XML parsing allows null-byte injection in file names during XML processing.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-21707"]
+  },
+  {
+    "cveId": "CVE-2021-21703",
+    "technology": "PHP",
+    "affectedVersions": ["8.0", "7.4", "7.3"],
+    "severity": "HIGH",
+    "cvss": 7.0,
+    "exploitAvailable": false,
+    "description": "PHP-FPM privilege escalation via a crafted main FPM configuration file that enables code execution as root.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-21703"]
+  },
+  {
+    "cveId": "CVE-2019-11043",
+    "technology": "PHP",
+    "affectedVersions": ["7.3", "7.2", "7.1", "7.0"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": true,
+    "description": "PHP-FPM buffer overflow in env_path_info under FastCGI when PATH_INFO is not set, allowing remote code execution when nginx is misconfigured.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-11043", "https://github.com/neex/phuip-fpizdam"]
+  },
+  {
+    "cveId": "CVE-2019-11041",
+    "technology": "PHP",
+    "affectedVersions": ["7.3", "7.2", "7.1"],
+    "severity": "HIGH",
+    "cvss": 7.1,
+    "exploitAvailable": false,
+    "description": "Heap-buffer-over-read in PHP EXIF extension when parsing EXIF data from JPEG files.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-11041"]
+  },
+  {
+    "cveId": "CVE-2019-11042",
+    "technology": "PHP",
+    "affectedVersions": ["7.3", "7.2", "7.1"],
+    "severity": "HIGH",
+    "cvss": 7.1,
+    "exploitAvailable": false,
+    "description": "Heap-buffer-over-read in PHP EXIF extension via crafted TIFF image data.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-11042"]
+  },
+  {
+    "cveId": "CVE-2018-19395",
+    "technology": "PHP",
+    "affectedVersions": ["7.3", "7.2", "7.1"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Use-after-free in PHP-FPM when processing FPM configuration with mismatched process manager settings.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-19395"]
+  },
+  {
+    "cveId": "CVE-2016-9933",
+    "technology": "PHP",
+    "affectedVersions": ["7.0", "5.6", "5.5"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Stack overflow in PHP GD library via crafted image causing denial of service or potential code execution.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2016-9933"]
+  },
+  {
+    "cveId": "CVE-2016-7124",
+    "technology": "PHP",
+    "affectedVersions": ["7.0", "5.6", "5.5"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "PHP unserialize() invalid class name handling causes unexpected object destruction, enabling type confusion attacks.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2016-7124"]
+  },
+  {
+    "cveId": "CVE-2015-3152",
+    "technology": "PHP",
+    "affectedVersions": ["5.6", "5.5", "5.4"],
+    "severity": "HIGH",
+    "cvss": 7.4,
+    "exploitAvailable": false,
+    "description": "MySQL client library in PHP can be forced to fallback to unencrypted connection (BACKRONYM) when SSL is expected.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2015-3152"]
+  },
+  {
+    "cveId": "CVE-2014-9767",
+    "technology": "PHP",
+    "affectedVersions": ["5.6", "5.5", "5.4"],
+    "severity": "MEDIUM",
+    "cvss": 5.0,
+    "exploitAvailable": false,
+    "description": "Directory traversal in PHP ZipArchive::extractTo() allowing extraction of files outside target directory.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2014-9767"]
+  },
+  {
+    "cveId": "CVE-2020-7064",
+    "technology": "PHP",
+    "affectedVersions": ["7.4", "7.3", "7.2"],
+    "severity": "HIGH",
+    "cvss": 7.4,
+    "exploitAvailable": false,
+    "description": "Type confusion in PHP's PHAR extension via unserialized object that leads to use-after-free.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-7064"]
+  },
+  {
+    "cveId": "CVE-2020-7066",
+    "technology": "PHP",
+    "affectedVersions": ["7.4", "7.3", "7.2"],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": false,
+    "description": "PHP curl_getinfo() information leak via incorrect buffer handling on certain platforms.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-7066"]
+  },
+  {
+    "cveId": "CVE-2023-0662",
+    "technology": "PHP",
+    "affectedVersions": ["8.2", "8.1", "8.0", "7.4"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "PHP denial of service via memory exhaustion when parsing input with excessive number of parts in multipart/form-data.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-0662"]
+  }
+]

@@ -1,0 +1,252 @@
+[
+  {
+    "cveId": "CVE-2023-2745",
+    "technology": "WordPress",
+    "affectedVersions": ["6.2", "6.1", "6.0", "5.9"],
+    "severity": "MEDIUM",
+    "cvss": 5.4,
+    "exploitAvailable": false,
+    "description": "WordPress directory traversal via the 'wp_lang' parameter allowing attackers to load arbitrary translation files.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-2745"]
+  },
+  {
+    "cveId": "CVE-2022-3590",
+    "technology": "WordPress",
+    "affectedVersions": ["6.0", "5.9", "5.8", "5.7", "5.6", "5.5"],
+    "severity": "MEDIUM",
+    "cvss": 5.9,
+    "exploitAvailable": false,
+    "description": "WordPress SSRF via pingback feature allows internal network scanning through the XML-RPC interface.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-3590"]
+  },
+  {
+    "cveId": "CVE-2022-21664",
+    "technology": "WordPress",
+    "affectedVersions": ["5.8", "5.7", "5.6", "5.5", "5.4", "5.3"],
+    "severity": "MEDIUM",
+    "cvss": 7.2,
+    "exploitAvailable": false,
+    "description": "Authenticated SQL injection in WordPress core via WP_Query when passing input from untrusted sources to the query's orderby clause.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-21664"]
+  },
+  {
+    "cveId": "CVE-2022-21663",
+    "technology": "WordPress",
+    "affectedVersions": ["5.8", "5.7", "5.6", "5.5", "5.4"],
+    "severity": "MEDIUM",
+    "cvss": 6.6,
+    "exploitAvailable": false,
+    "description": "Object injection via metadata in WordPress core allows contributor-level authenticated users to execute arbitrary PHP objects.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-21663"]
+  },
+  {
+    "cveId": "CVE-2022-21662",
+    "technology": "WordPress",
+    "affectedVersions": ["5.8", "5.7", "5.6", "5.5"],
+    "severity": "MEDIUM",
+    "cvss": 6.1,
+    "exploitAvailable": false,
+    "description": "Stored XSS in WordPress block editor via crafted post content by contributor-level users.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-21662"]
+  },
+  {
+    "cveId": "CVE-2022-21661",
+    "technology": "WordPress",
+    "affectedVersions": ["5.8", "5.7", "5.6", "5.5", "5.4"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "SQL injection via WP_Query orderby parameter in WordPress core when untrusted input is passed without proper sanitization.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2022-21661"]
+  },
+  {
+    "cveId": "CVE-2021-29447",
+    "technology": "WordPress",
+    "affectedVersions": ["5.7", "5.6", "5.5", "5.4"],
+    "severity": "HIGH",
+    "cvss": 7.1,
+    "exploitAvailable": true,
+    "description": "XXE vulnerability in WordPress media library via crafted WAV file upload, allowing disclosure of sensitive server files.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-29447", "https://blog.wpsec.com/wordpress-xxe-in-media-library-cve-2021-29447/"]
+  },
+  {
+    "cveId": "CVE-2021-29450",
+    "technology": "WordPress",
+    "affectedVersions": ["5.7", "5.6", "5.5"],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "Exposure of sensitive data via authenticated REST API endpoint in WordPress before 5.7.1.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2021-29450"]
+  },
+  {
+    "cveId": "CVE-2020-28032",
+    "technology": "WordPress",
+    "affectedVersions": ["5.5", "5.4", "5.3", "5.2", "5.1", "5.0"],
+    "severity": "CRITICAL",
+    "cvss": 9.8,
+    "exploitAvailable": false,
+    "description": "PHP object injection in WordPress core via untrusted data deserialization in the user metadata.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-28032"]
+  },
+  {
+    "cveId": "CVE-2020-28033",
+    "technology": "WordPress",
+    "affectedVersions": ["5.5", "5.4", "5.3", "5.2"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "WordPress embeds cross-site scripting via oEmbed data from crafted external URL responses.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2020-28033"]
+  },
+  {
+    "cveId": "CVE-2019-17671",
+    "technology": "WordPress",
+    "affectedVersions": ["5.2", "5.1", "5.0", "4.9"],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": false,
+    "description": "Unauthenticated viewing of certain content due to a broken access control in WordPress before 5.2.4.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-17671"]
+  },
+  {
+    "cveId": "CVE-2019-9787",
+    "technology": "WordPress",
+    "affectedVersions": ["5.1", "5.0", "4.9"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "CSRF token fixation vulnerability in WordPress comment system allowing privilege escalation.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-9787"]
+  },
+  {
+    "cveId": "CVE-2019-8942",
+    "technology": "WordPress",
+    "affectedVersions": ["5.0", "4.9", "4.8"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": true,
+    "description": "Authenticated remote code execution in WordPress via path traversal in the image crop function.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-8942", "https://blog.ripstech.com/2019/wordpress-image-remote-code-execution/"]
+  },
+  {
+    "cveId": "CVE-2019-8943",
+    "technology": "WordPress",
+    "affectedVersions": ["5.0", "4.9", "4.8"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": true,
+    "description": "Path traversal complementing CVE-2019-8942 in WordPress for authenticated remote code execution via media file manipulation.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2019-8943"]
+  },
+  {
+    "cveId": "CVE-2018-20714",
+    "technology": "WordPress",
+    "affectedVersions": ["4.9", "4.8", "4.7"],
+    "severity": "HIGH",
+    "cvss": 8.8,
+    "exploitAvailable": false,
+    "description": "Authenticated SQL injection in WordPress via the delete_option function in admin settings.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2018-20714"]
+  },
+  {
+    "cveId": "CVE-2017-9061",
+    "technology": "WordPress",
+    "affectedVersions": ["4.7", "4.6", "4.5"],
+    "severity": "MEDIUM",
+    "cvss": 6.5,
+    "exploitAvailable": false,
+    "description": "SSRF in WordPress before 4.7.5 allows remote attackers to initiate requests to internal services via crafted pingback requests.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2017-9061"]
+  },
+  {
+    "cveId": "CVE-2017-9062",
+    "technology": "WordPress",
+    "affectedVersions": ["4.7", "4.6", "4.5"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "Improper host validation in WordPress HTTP API causing SSRF and denial of service.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2017-9062"]
+  },
+  {
+    "cveId": "CVE-2017-5487",
+    "technology": "WordPress",
+    "affectedVersions": ["4.7", "4.6"],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": true,
+    "description": "WordPress REST API user enumeration vulnerability exposing usernames via /wp-json/wp/v2/users endpoint.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2017-5487"]
+  },
+  {
+    "cveId": "CVE-2017-5491",
+    "technology": "WordPress",
+    "affectedVersions": ["4.7", "4.6", "4.5"],
+    "severity": "MEDIUM",
+    "cvss": 5.3,
+    "exploitAvailable": false,
+    "description": "WordPress wp-mail.php allows unauthorized access to check email accounts under certain configurations.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2017-5491"]
+  },
+  {
+    "cveId": "CVE-2017-5492",
+    "technology": "WordPress",
+    "affectedVersions": ["4.7", "4.6"],
+    "severity": "MEDIUM",
+    "cvss": 4.3,
+    "exploitAvailable": false,
+    "description": "CSRF vulnerability in WordPress widget editing allows unauthorized changes to widget configuration.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2017-5492"]
+  },
+  {
+    "cveId": "CVE-2016-6634",
+    "technology": "WordPress",
+    "affectedVersions": ["4.6", "4.5", "4.4"],
+    "severity": "MEDIUM",
+    "cvss": 6.1,
+    "exploitAvailable": false,
+    "description": "XSS in WordPress network settings page accessible by network administrators.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2016-6634"]
+  },
+  {
+    "cveId": "CVE-2015-3429",
+    "technology": "WordPress",
+    "affectedVersions": ["4.2", "4.1", "4.0", "3.9"],
+    "severity": "MEDIUM",
+    "cvss": 4.3,
+    "exploitAvailable": false,
+    "description": "XSS in WordPress Twenty Fifteen theme via the Genericons icon font example file.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2015-3429"]
+  },
+  {
+    "cveId": "CVE-2014-0166",
+    "technology": "WordPress",
+    "affectedVersions": ["3.8", "3.7", "3.6", "3.5"],
+    "severity": "HIGH",
+    "cvss": 7.5,
+    "exploitAvailable": false,
+    "description": "WordPress cookie forgery vulnerability allows attackers to bypass authentication by forging auth cookies.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2014-0166"]
+  },
+  {
+    "cveId": "CVE-2024-4439",
+    "technology": "WordPress",
+    "affectedVersions": ["6.5", "6.4", "6.3"],
+    "severity": "MEDIUM",
+    "cvss": 6.1,
+    "exploitAvailable": false,
+    "description": "Stored XSS vulnerability in WordPress core via user display name in comments section.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2024-4439"]
+  },
+  {
+    "cveId": "CVE-2023-39999",
+    "technology": "WordPress",
+    "affectedVersions": ["6.3", "6.2", "6.1", "6.0"],
+    "severity": "MEDIUM",
+    "cvss": 4.3,
+    "exploitAvailable": false,
+    "description": "Exposure of sensitive information via the WordPress attachment pages when not properly restricted.",
+    "references": ["https://nvd.nist.gov/vuln/detail/CVE-2023-39999"]
+  }
+]
