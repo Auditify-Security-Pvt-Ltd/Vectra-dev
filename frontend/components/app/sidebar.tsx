@@ -60,14 +60,11 @@ const MODULES: NavModule[] = [
     label: 'Network Security',
     icon: Wifi,
     href: '/app/network-security',
-    comingSoon: true,
     items: [
-      { icon: Server,        label: 'Hosts',           href: '/app/network-security' },
-      { icon: Network,       label: 'IP Ranges',       href: '/app/network-security' },
-      { icon: Zap,           label: 'Port Scans',      href: '/app/network-security' },
-      { icon: Settings,      label: 'Services',        href: '/app/network-security' },
-      { icon: AlertTriangle, label: 'Vulnerabilities', href: '/app/network-security' },
-      { icon: Bug,           label: 'Network CVEs',    href: '/app/network-security' },
+      { icon: Zap,           label: 'Scans',    href: '/app/network-security'          },
+      { icon: Server,        label: 'Hosts',    href: '/app/network-security/hosts'    },
+      { icon: AlertTriangle, label: 'Findings', href: '/app/network-security/findings' },
+      { icon: Bug,           label: 'CVEs',     href: '/app/network-security/cves'     },
     ],
   },
   {

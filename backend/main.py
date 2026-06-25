@@ -20,6 +20,7 @@ from api.scans import router as scans_router
 from api.assets import router as assets_router
 from api.cves import router as cves_router
 from api.debug import router as debug_router
+from api.network_scans import router as network_router
 from utils.logger import get_logger
 
 # Root logger config — applied before any module imports log anything.
@@ -51,6 +52,7 @@ app.include_router(scans_router)
 app.include_router(assets_router)
 app.include_router(cves_router)
 app.include_router(debug_router)
+app.include_router(network_router)
 
 
 @app.on_event("startup")
