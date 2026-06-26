@@ -129,8 +129,23 @@ export async function getReportableTargets(uid: string): Promise<ReportTarget[]>
 
   for (const target of targetSet) {
     const findingsCount = allFindings.filter((f) => f.target === target).length
-    const cveCount      = allCves.filter((c) => matchesTarget(c.assetUrl, target)).length
-    const assetCount    = allAssets.filter((a) => matchesDomain(a.domain ?? '', target)).length
+
+    // Scan IDs for this target — used as fallback for CVE/asset matching
+    const targetScanIds = new Set(
+      (scansByTarget.get(target) ?? []).map((s) => s.scanId),
+    )
+
+    const cveCount = allCves.filter((c) => {
+      if (c.assetUrl && matchesTarget(c.assetUrl, target)) return true
+      if (c.discoveryId && targetScanIds.has(c.discoveryId)) return true
+      return false
+    }).length
+
+    const assetCount = allAssets.filter((a) => {
+      if (matchesDomain(a.domain ?? '', target)) return true
+      if (a.discoveryId && targetScanIds.has(a.discoveryId)) return true
+      return false
+    }).length
 
     // Skip targets with absolutely no data
     if (findingsCount === 0 && cveCount === 0 && assetCount === 0) continue
@@ -171,14 +186,34 @@ export async function fetchReportDataByTarget(
     .map((d) => d.data() as FirestoreFinding)
     .sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
 
+  // Collect scan IDs for this target — used as a fallback CVE matcher so CVEs
+  // are always linked even when assetUrl format differs from the target string.
+  const targetScanIds = new Set(
+    scansSnap.docs
+      .map((d) => d.data() as FirestoreScan)
+      .filter((s) => s.target === target)
+      .map((s) => s.scanId),
+  )
+
   const cves = cvesSnap.docs
     .map((d) => d.data() as FirestoreCve)
-    .filter((c) => matchesTarget(c.assetUrl, target))
+    .filter((c) => {
+      // Primary: URL-hostname match
+      if (c.assetUrl && matchesTarget(c.assetUrl, target)) return true
+      // Fallback: CVE was found during a scan of this exact target
+      if (c.discoveryId && targetScanIds.has(c.discoveryId)) return true
+      return false
+    })
     .sort((a, b) => b.cvssScore - a.cvssScore)
 
   const assets = assetsSnap.docs
     .map((d) => d.data() as FirestoreAsset)
-    .filter((a) => matchesDomain(a.domain ?? '', target))
+    .filter((a) => {
+      if (matchesDomain(a.domain ?? '', target)) return true
+      // Also match by discoveryId so assets from Full Scans are always included
+      if (a.discoveryId && targetScanIds.has(a.discoveryId)) return true
+      return false
+    })
     .sort((a, b) => (a.alive === b.alive ? 0 : a.alive ? -1 : 1))
 
   const latestScan = scansSnap.docs
@@ -252,6 +287,20 @@ function statBox(
   doc.text(label.toUpperCase(), x + w / 2, y + h - 3, { align: 'center' })
 }
 
+// Truncate a URL for display in tables — keeps it readable without overflow
+function truncUrl(url: string | null | undefined, maxLen = 55): string {
+  if (!url) return '—'
+  if (url.length <= maxLen) return url
+  // Try to keep hostname + path start
+  try {
+    const u = new URL(url.startsWith('http') ? url : `https://${url}`)
+    const short = u.hostname + u.pathname
+    return short.length <= maxLen ? short : short.slice(0, maxLen - 1) + '…'
+  } catch {
+    return url.slice(0, maxLen - 1) + '…'
+  }
+}
+
 // ── PDF generator ─────────────────────────────────────────────────────
 
 export async function generatePdf(data: ReportData): Promise<Blob> {
@@ -260,11 +309,15 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
 
   const { target, scan, findings, cves, assets, reportId, generatedBy } = data
 
-  const doc    = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-  const PW     = 210
-  const PH     = 297
-  const M      = 15
-  const CW     = PW - 2 * M
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const PW  = 210
+  const PH  = 297
+  const M   = 14   // margin
+  const CW  = PW - 2 * M
+
+  // Table style defaults applied globally
+  const tblHead = { fillColor: [20, 20, 20] as [number, number, number], textColor: [255, 255, 255] as [number, number, number], fontStyle: 'bold' as const, fontSize: 8 }
+  const tblBody = { fontSize: 8, cellPadding: 2.8, overflow: 'linebreak' as const }
 
   const C = {
     critical: findings.filter((f) => f.severity === 'critical').length,
@@ -292,65 +345,66 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
 
   // ─── COVER PAGE ───────────────────────────────────────────────────
 
-  // Dark top band
-  doc.setFillColor(15, 15, 15)
-  doc.rect(0, 0, PW, 72, 'F')
+  doc.setFillColor(12, 12, 12)
+  doc.rect(0, 0, PW, 75, 'F')
   doc.setFillColor(124, 58, 237)
-  doc.rect(0, 72, PW, 2, 'F')
+  doc.rect(0, 75, PW, 2.5, 'F')
 
-  // Brand
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(26)
+  doc.setFontSize(28)
   doc.setTextColor(255, 255, 255)
-  doc.text('VECTRA', M, 28)
+  doc.text('VECTRA', M, 30)
+
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(160, 160, 160)
-  doc.text('SECURITY PLATFORM', M, 37)
+  doc.text('SECURITY PLATFORM', M, 39)
 
-  // Report title
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(12)
-  doc.setTextColor(220, 220, 220)
+  doc.setFontSize(11.5)
+  doc.setTextColor(210, 210, 210)
   doc.text('SECURITY ASSESSMENT REPORT', PW - M, 55, { align: 'right' })
+
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.setTextColor(124, 58, 237)
-  doc.text('Web Application Security', PW - M, 63, { align: 'right' })
+  doc.text('Web Application Security', PW - M, 64, { align: 'right' })
 
-  // Target
-  doc.setTextColor(107, 114, 128)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(8)
-  doc.text('ASSESSMENT TARGET', M, 90)
+  // Target block
+  doc.setTextColor(100, 100, 100)
+  doc.setFontSize(7.5)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(18)
+  doc.text('ASSESSMENT TARGET', M, 92)
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
   doc.setTextColor(15, 15, 15)
-  doc.text(target, M, 101)
+  // Truncate very long targets so they don't overflow
+  const displayTarget = target.length > 50 ? target.slice(0, 48) + '…' : target
+  doc.text(displayTarget, M, 103)
 
-  // Thin divider
-  doc.setDrawColor(230, 230, 230)
-  doc.setLineWidth(0.3)
-  doc.line(M, 107, PW - M, 107)
+  doc.setDrawColor(220, 220, 220)
+  doc.setLineWidth(0.25)
+  doc.line(M, 108, PW - M, 108)
 
-  // Stat boxes (2 rows × 4 columns)
-  const BW   = (CW - 9) / 4
-  const BH   = 24
-  const BY1  = 114
-  const BY2  = 142
+  // Stat boxes (2 rows × 4)
+  const BW  = (CW - 9) / 4
+  const BH  = 22
+  const BY1 = 114
+  const BY2 = 140
 
-  statBox(doc, M,              BY1, BW, BH, 'Total Findings', String(findings.length), [15, 15, 15])
-  statBox(doc, M + BW + 3,     BY1, BW, BH, 'Critical',       String(C.critical),      [185, 28, 28])
-  statBox(doc, M + (BW+3)*2,   BY1, BW, BH, 'High',           String(C.high),          [154, 52, 18])
-  statBox(doc, M + (BW+3)*3,   BY1, BW, BH, 'CVEs Found',     String(cves.length),     [124, 58, 237])
-  statBox(doc, M,              BY2, BW, BH, 'Medium',          String(C.medium),        [133, 77, 14])
-  statBox(doc, M + BW + 3,     BY2, BW, BH, 'Low',            String(C.low),           [29, 78, 216])
-  statBox(doc, M + (BW+3)*2,   BY2, BW, BH, 'Info',           String(C.info),          [75, 85, 99])
-  statBox(doc, M + (BW+3)*3,   BY2, BW, BH, 'Assets',         String(assets.length),   [15, 15, 15])
+  statBox(doc, M,            BY1, BW, BH, 'Total Findings', String(findings.length), [15, 15, 15])
+  statBox(doc, M + BW + 3,   BY1, BW, BH, 'Critical',       String(C.critical),      [185, 28, 28])
+  statBox(doc, M+(BW+3)*2,   BY1, BW, BH, 'High',           String(C.high),          [154, 52, 18])
+  statBox(doc, M+(BW+3)*3,   BY1, BW, BH, 'CVEs Found',     String(cves.length),     [124, 58, 237])
+  statBox(doc, M,            BY2, BW, BH, 'Medium',          String(C.medium),        [133, 77, 14])
+  statBox(doc, M + BW + 3,   BY2, BW, BH, 'Low',            String(C.low),           [29, 78, 216])
+  statBox(doc, M+(BW+3)*2,   BY2, BW, BH, 'Info',           String(C.info),          [75, 85, 99])
+  statBox(doc, M+(BW+3)*3,   BY2, BW, BH, 'Assets',         String(assets.length),   [15, 15, 15])
 
-  // Report metadata rows
-  let my = 175
-  const meta = [
+  // Metadata
+  let my = 172
+  const meta: [string, string][] = [
     ['Assessment Date',   scanDate],
     ['Scan Profile',      scan?.scanProfile ?? scan?.scanType ?? 'Web Security'],
     ['Generated By',      generatedBy],
@@ -358,21 +412,21 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
     ['Classification',    'CONFIDENTIAL'],
   ]
   meta.forEach(([label, value], i) => {
-    doc.setFillColor(i % 2 === 0 ? 250 : 255, i % 2 === 0 ? 250 : 255, i % 2 === 0 ? 250 : 255)
+    const bg = i % 2 === 0 ? 250 : 255
+    doc.setFillColor(bg, bg, bg)
     doc.rect(M, my - 5, CW, 9, 'F')
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8)
-    doc.setTextColor(107, 114, 128)
+    doc.setFontSize(7.5)
+    doc.setTextColor(100, 100, 100)
     doc.text(label, M + 3, my)
     doc.setFont('helvetica', 'normal')
-    doc.setTextColor(15, 15, 15)
-    doc.text(value, M + 58, my)
+    doc.setTextColor(20, 20, 20)
+    doc.text(value, M + 56, my)
     my += 9
   })
 
-  // Footer
-  doc.setTextColor(200, 200, 200)
-  doc.setFontSize(7)
+  doc.setTextColor(190, 190, 190)
+  doc.setFontSize(6.5)
   doc.text(
     'This document contains confidential security assessment information. Unauthorized distribution is prohibited.',
     PW / 2, PH - 10, { align: 'center' },
@@ -382,31 +436,35 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
 
   doc.addPage()
   let y = drawPageHeader(doc, target, PW, M)
-
   y = drawSectionTitle(doc, 'Executive Summary', y, M, CW)
 
-  // Introduction paragraph
-  const introText = `This security assessment was conducted against ${target} on ${scanDate}. The assessment identified ${findings.length} security findings across ${assets.length} discovered assets. ${cves.length > 0 ? `CVE correlation analysis identified ${cves.length} known vulnerabilities in the technology stack.` : ''} Findings are classified by severity and prioritized for remediation.`
+  const intro = `This security assessment was conducted against ${target} on ${scanDate}. ` +
+    `The assessment identified ${findings.length} security finding${findings.length !== 1 ? 's' : ''} across ` +
+    `${assets.length} discovered asset${assets.length !== 1 ? 's' : ''}. ` +
+    (cves.length > 0
+      ? `CVE correlation analysis identified ${cves.length} known vulnerabilities in the detected technology stack. `
+      : '') +
+    `Findings are classified by severity and prioritized for remediation.`
+
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(40, 40, 40)
-  const introLines = doc.splitTextToSize(introText, CW)
+  const introLines = doc.splitTextToSize(intro, CW)
   doc.text(introLines, M, y)
-  y += introLines.length * 5 + 6
+  y += introLines.length * 5.2 + 7
 
-  // Overall risk badge
+  // Risk badge
   doc.setFillColor(...riskRgb)
-  doc.roundedRect(M, y, 68, 11, 2, 2, 'F')
+  doc.roundedRect(M, y, 70, 11, 2, 2, 'F')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8.5)
   doc.setTextColor(255, 255, 255)
-  doc.text(`OVERALL RISK: ${overallRisk.toUpperCase()}`, M + 34, y + 7, { align: 'center' })
-  y += 18
+  doc.text(`OVERALL RISK: ${overallRisk.toUpperCase()}`, M + 35, y + 7.5, { align: 'center' })
+  y += 19
 
-  // Findings breakdown table
   autoTable(doc, {
     startY: y,
-    head: [['Severity', 'Count', 'Percentage of Total']],
+    head: [['Severity', 'Count', '% of Total']],
     body: [
       ['Critical', C.critical, findings.length ? `${Math.round((C.critical / findings.length) * 100)}%` : '0%'],
       ['High',     C.high,     findings.length ? `${Math.round((C.high     / findings.length) * 100)}%` : '0%'],
@@ -415,9 +473,11 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
       ['Info',     C.info,     findings.length ? `${Math.round((C.info     / findings.length) * 100)}%` : '0%'],
       ['Total',    findings.length, '100%'],
     ],
-    headStyles: { fillColor: [15, 15, 15], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5 },
-    styles:     { fontSize: 9, cellPadding: 3 },
-    margin:     { left: M, right: M },
+    headStyles: tblHead,
+    styles:     { ...tblBody, cellPadding: 3 },
+    columnStyles: { 0: { cellWidth: 45 }, 1: { cellWidth: 30 }, 2: { cellWidth: 'auto' } },
+    margin: { left: M, right: M },
+    showHead: 'everyPage',
     didParseCell: (data: any) => {
       if (data.section === 'body' && data.column.index === 0) {
         const s = String(data.cell.raw).toLowerCase()
@@ -426,34 +486,41 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
           data.cell.styles.textColor = SEV_TEXT[s]
           data.cell.styles.fontStyle = (s === 'critical' || s === 'high') ? 'bold' : 'normal'
         } else {
-          data.cell.styles.fillColor = [240, 240, 240]
+          data.cell.styles.fillColor = [235, 235, 235]
           data.cell.styles.fontStyle = 'bold'
         }
       }
     },
   })
-  y = (doc as any).lastAutoTable.finalY + 12
+  y = (doc as any).lastAutoTable.finalY + 14
 
   // ─── ASSET INVENTORY ──────────────────────────────────────────────
 
   if (assets.length > 0) {
-    if (y > PH - 60) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
+    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
     y = drawSectionTitle(doc, 'Asset Inventory', y, M, CW)
 
     autoTable(doc, {
       startY: y,
-      head: [['Subdomain', 'IP', 'Server', 'Status', 'Technologies']],
+      head: [['Subdomain / Host', 'IP Address', 'Server', 'Status', 'Technologies']],
       body: assets.slice(0, 80).map((a) => [
         a.subdomain ?? a.domain ?? '',
         a.ip ?? '—',
-        a.server ?? '—',
+        a.server ? a.server.slice(0, 22) : '—',
         a.alive ? `${a.statusCode ?? 200}` : 'Offline',
         (a.technologies ?? []).slice(0, 3).join(', ') || '—',
       ]),
-      headStyles: { fillColor: [15, 15, 15], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
-      styles:     { fontSize: 8, cellPadding: 2.5, overflow: 'linebreak' },
-      columnStyles: { 0: { cellWidth: 48 }, 1: { cellWidth: 28 }, 2: { cellWidth: 35 }, 3: { cellWidth: 20 }, 4: { cellWidth: 'auto' } },
+      headStyles: tblHead,
+      styles:     tblBody,
+      columnStyles: {
+        0: { cellWidth: 50 },
+        1: { cellWidth: 28 },
+        2: { cellWidth: 34 },
+        3: { cellWidth: 18 },
+        4: { cellWidth: 'auto' },
+      },
       margin: { left: M, right: M },
+      showHead: 'everyPage',
       didParseCell: (data: any) => {
         if (data.section === 'body' && data.column.index === 3) {
           const v = String(data.cell.raw)
@@ -462,7 +529,7 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
         }
       },
     })
-    y = (doc as any).lastAutoTable.finalY + 12
+    y = (doc as any).lastAutoTable.finalY + 14
   }
 
   // ─── FINDINGS SUMMARY ─────────────────────────────────────────────
@@ -474,28 +541,27 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
 
     autoTable(doc, {
       startY: y,
-      head: [['#', 'Vulnerability', 'Severity', 'CVSS', 'Risk', 'Source', 'Affected URL']],
+      head: [['#', 'Vulnerability', 'Severity', 'CVSS', 'Source', 'Affected URL']],
       body: findings.map((f, i) => [
         i + 1,
         f.title,
         f.severity.toUpperCase(),
         CVSS_SCORE[f.severity]?.toFixed(1) ?? '0.0',
-        String(RISK_SCORE[f.severity] ?? 0),
-        (f.source === 'vectra' ? 'Vectra' : f.source === 'wpscan' ? 'WPScan' : 'Nuclei'),
-        f.matchedAt ?? f.host ?? '—',
+        f.source === 'vectra' ? 'Vectra' : f.source === 'wpscan' ? 'WPScan' : 'Nuclei',
+        truncUrl(f.matchedAt ?? f.host),
       ]),
-      headStyles: { fillColor: [15, 15, 15], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
-      styles:     { fontSize: 7.5, cellPadding: 2.5, overflow: 'linebreak' },
+      headStyles: tblHead,
+      styles:     tblBody,
       columnStyles: {
         0: { cellWidth: 8 },
-        1: { cellWidth: 52 },
-        2: { cellWidth: 20 },
+        1: { cellWidth: 58 },
+        2: { cellWidth: 22 },
         3: { cellWidth: 14 },
-        4: { cellWidth: 12 },
-        5: { cellWidth: 20 },
-        6: { cellWidth: 'auto' },
+        4: { cellWidth: 22 },
+        5: { cellWidth: 'auto' },
       },
       margin: { left: M, right: M },
+      showHead: 'everyPage',
       didParseCell: (data: any) => {
         if (data.section === 'body' && data.column.index === 2) {
           const s = String(data.cell.raw).toLowerCase()
@@ -507,62 +573,80 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
         }
       },
     })
-    y = (doc as any).lastAutoTable.finalY + 12
+    y = (doc as any).lastAutoTable.finalY + 14
 
-    // Detailed findings — abbreviated blocks
-    if (y > PH - 60) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
+    // Detailed findings
+    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
     y = drawSectionTitle(doc, 'Detailed Findings', y, M, CW)
 
     for (const f of findings.slice(0, 40)) {
-      if (y > PH - 50) {
+      // Estimate block height to check for page break
+      const descLines = f.description
+        ? doc.splitTextToSize(f.description, CW - 6).length
+        : 0
+      const remLines  = doc.splitTextToSize(`Remediation: ${getRemediation(f)}`, CW - 6).length
+      const blockH    = 12 + descLines * 4.5 + remLines * 4.2 + 8
+
+      if (y + blockH > PH - 18) {
         doc.addPage()
         y = drawPageHeader(doc, target, PW, M)
-        y += 5
+        y += 4
       }
 
-      const sev    = f.severity.toLowerCase()
-      const fill   = SEV_FILL[sev]   ?? [243, 244, 246]
-      const textC  = SEV_TEXT[sev]   ?? [75, 85, 99]
+      const sev   = f.severity.toLowerCase()
+      const fill  = SEV_FILL[sev]  ?? [243, 244, 246]
+      const textC = SEV_TEXT[sev]  ?? [75, 85, 99]
 
-      // Finding header strip
+      // Header strip
       doc.setFillColor(...fill)
-      doc.rect(M, y, CW, 8, 'F')
+      doc.rect(M, y, CW, 9, 'F')
       doc.setFillColor(...textC)
-      doc.rect(M, y, 3, 8, 'F')
+      doc.rect(M, y, 3, 9, 'F')
+
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(8.5)
       doc.setTextColor(...textC)
-      doc.text(f.title, M + 7, y + 5.5)
+      doc.text(f.title, M + 7, y + 6)
+
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(7)
-      doc.setTextColor(107, 114, 128)
-      doc.text(
-        `${sev.toUpperCase()}  ·  CVSS ${CVSS_SCORE[sev]?.toFixed(1)}  ·  Risk ${RISK_SCORE[sev]}/100  ·  ${f.matchedAt ?? f.host ?? ''}`,
-        PW - M, y + 5.5, { align: 'right' },
-      )
-      y += 10
+      doc.setTextColor(100, 100, 100)
+      const metaRight = `${sev.toUpperCase()}  ·  CVSS ${CVSS_SCORE[sev]?.toFixed(1)}  ·  Risk ${RISK_SCORE[sev]}/100`
+      doc.text(metaRight, PW - M, y + 6, { align: 'right' })
+      y += 11
 
+      // Affected URL
+      const affectedUrl = f.matchedAt ?? f.host
+      if (affectedUrl) {
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(7.5)
+        doc.setTextColor(80, 80, 80)
+        const urlLines = doc.splitTextToSize(`URL: ${affectedUrl}`, CW - 6)
+        doc.text(urlLines, M + 4, y)
+        y += urlLines.length * 4 + 2
+      }
+
+      // Description
       if (f.description) {
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(8)
-        doc.setTextColor(55, 55, 55)
-        const descLines = doc.splitTextToSize(f.description, CW - 5)
-        doc.text(descLines, M + 4, y)
-        y += descLines.length * 4.5 + 2
+        doc.setTextColor(50, 50, 50)
+        const dl = doc.splitTextToSize(f.description, CW - 6)
+        doc.text(dl, M + 4, y)
+        y += dl.length * 4.5 + 3
       }
 
-      const rem = getRemediation(f)
+      // Remediation
       doc.setFont('helvetica', 'italic')
       doc.setFontSize(7.5)
-      doc.setTextColor(107, 114, 128)
-      const remLines = doc.splitTextToSize(`Remediation: ${rem}`, CW - 5)
-      doc.text(remLines, M + 4, y)
-      y += remLines.length * 4 + 6
+      doc.setTextColor(100, 100, 100)
+      const rl = doc.splitTextToSize(`Remediation: ${getRemediation(f)}`, CW - 6)
+      doc.text(rl, M + 4, y)
+      y += rl.length * 4.2 + 7
 
-      // Thin separator
-      doc.setDrawColor(230, 230, 230)
-      doc.setLineWidth(0.2)
-      doc.line(M, y - 3, PW - M, y - 3)
+      doc.setDrawColor(225, 225, 225)
+      doc.setLineWidth(0.15)
+      doc.line(M, y - 4, PW - M, y - 4)
     }
   }
 
@@ -581,14 +665,25 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
         c.technology,
         c.version,
         c.cvssScore.toFixed(1),
-        c.severity,
+        (c.severity ?? '').toUpperCase(),
         c.exploitAvailable ? 'YES' : 'No',
-        c.published ? new Date(c.published).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—',
+        c.published
+          ? new Date(c.published).toLocaleDateString('en-US', { year: 'numeric', month: 'short' })
+          : '—',
       ]),
-      headStyles: { fillColor: [15, 15, 15], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
-      styles:     { fontSize: 8, cellPadding: 2.5 },
-      columnStyles: { 0: { cellWidth: 38 }, 1: { cellWidth: 28 }, 2: { cellWidth: 20 }, 3: { cellWidth: 14 }, 4: { cellWidth: 22 }, 5: { cellWidth: 16 }, 6: { cellWidth: 'auto' } },
+      headStyles: tblHead,
+      styles:     tblBody,
+      columnStyles: {
+        0: { cellWidth: 36 },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 14 },
+        4: { cellWidth: 24 },
+        5: { cellWidth: 16 },
+        6: { cellWidth: 'auto' },
+      },
       margin: { left: M, right: M },
+      showHead: 'everyPage',
       didParseCell: (data: any) => {
         if (data.section === 'body') {
           if (data.column.index === 4) {
@@ -603,10 +698,58 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
             data.cell.styles.textColor = [185, 28, 28]
             data.cell.styles.fontStyle = 'bold'
           }
+          if (data.column.index === 0) {
+            data.cell.styles.textColor = [109, 40, 217]
+            data.cell.styles.fontStyle = 'bold'
+          }
         }
       },
     })
-    y = (doc as any).lastAutoTable.finalY + 12
+    y = (doc as any).lastAutoTable.finalY + 14
+
+    // CVE descriptions
+    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
+    y = drawSectionTitle(doc, 'CVE Details', y, M, CW)
+
+    for (const c of cves.slice(0, 25)) {
+      const descLines = c.description
+        ? doc.splitTextToSize(c.description, CW - 6).length
+        : 0
+      if (y + 10 + descLines * 4.5 > PH - 18) {
+        doc.addPage()
+        y = drawPageHeader(doc, target, PW, M)
+        y += 4
+      }
+
+      doc.setFillColor(245, 245, 255)
+      doc.rect(M, y, CW, 8, 'F')
+      doc.setFillColor(109, 40, 217)
+      doc.rect(M, y, 3, 8, 'F')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8.5)
+      doc.setTextColor(109, 40, 217)
+      doc.text(c.cveId, M + 7, y + 5.5)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7.5)
+      doc.setTextColor(80, 80, 80)
+      doc.text(`${c.technology} ${c.version}  ·  CVSS ${c.cvssScore.toFixed(1)}  ·  ${c.exploitAvailable ? 'EXPLOIT AVAILABLE' : 'No known exploit'}`, PW - M, y + 5.5, { align: 'right' })
+      y += 10
+
+      if (c.description) {
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        doc.setTextColor(50, 50, 50)
+        const dl = doc.splitTextToSize(c.description, CW - 6)
+        doc.text(dl, M + 4, y)
+        y += dl.length * 4.5 + 7
+      } else {
+        y += 5
+      }
+
+      doc.setDrawColor(225, 225, 225)
+      doc.setLineWidth(0.15)
+      doc.line(M, y - 4, PW - M, y - 4)
+    }
   }
 
   // ─── RECOMMENDATIONS ──────────────────────────────────────────────
@@ -615,53 +758,57 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
   y = drawPageHeader(doc, target, PW, M)
   y = drawSectionTitle(doc, 'Remediation Recommendations', y, M, CW)
 
-  const sorted = [...findings].sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
-  sorted.slice(0, 30).forEach((f, i) => {
-    if (y > PH - 35) {
+  const sortedFindings = [...findings].sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
+
+  sortedFindings.slice(0, 30).forEach((f, i) => {
+    const rem    = getRemediation(f)
+    const rl     = doc.splitTextToSize(rem, CW - 24).length
+    const blockH = 9 + rl * 4.5 + 6
+
+    if (y + blockH > PH - 18) {
       doc.addPage()
       y = drawPageHeader(doc, target, PW, M)
-      y += 5
+      y += 4
     }
 
-    const sev    = f.severity.toLowerCase()
-    const textC  = SEV_TEXT[sev] ?? [75, 85, 99]
+    const sev   = f.severity.toLowerCase()
+    const textC = SEV_TEXT[sev] ?? [75, 85, 99]
 
     doc.setFillColor(...(SEV_FILL[sev] ?? [243, 244, 246]))
-    doc.roundedRect(M, y, 18, 6, 1, 1, 'F')
+    doc.roundedRect(M, y, 19, 6.5, 1, 1, 'F')
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(6.5)
     doc.setTextColor(...textC)
-    doc.text(sev.toUpperCase(), M + 9, y + 4, { align: 'center' })
+    doc.text(sev.toUpperCase(), M + 9.5, y + 4.5, { align: 'center' })
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8.5)
     doc.setTextColor(15, 15, 15)
-    doc.text(`${i + 1}. ${f.title}`, M + 22, y + 4.5)
+    doc.text(`${i + 1}. ${f.title}`, M + 23, y + 4.5)
     y += 9
 
-    const rem = getRemediation(f)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(8)
     doc.setTextColor(55, 55, 55)
-    const remLines = doc.splitTextToSize(rem, CW - 22)
-    doc.text(remLines, M + 22, y)
-    y += remLines.length * 4.5 + 5
+    const remLines = doc.splitTextToSize(rem, CW - 24)
+    doc.text(remLines, M + 23, y)
+    y += remLines.length * 4.5 + 6
   })
 
   // ─── PAGE NUMBERS (skip cover) ────────────────────────────────────
 
   const total = (doc.internal as any).getNumberOfPages()
-  for (let i = 2; i <= total; i++) {
-    doc.setPage(i)
-    doc.setDrawColor(220, 220, 220)
+  for (let p = 2; p <= total; p++) {
+    doc.setPage(p)
+    doc.setDrawColor(210, 210, 210)
     doc.setLineWidth(0.2)
-    doc.line(M, PH - 12, PW - M, PH - 12)
+    doc.line(M, PH - 11, PW - M, PH - 11)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(6.5)
     doc.setTextColor(150, 150, 150)
-    doc.text(`Report ID: ${reportId}`, M, PH - 7)
-    doc.text(`Page ${i - 1} of ${total - 1}`, PW - M, PH - 7, { align: 'right' })
-    doc.text('CONFIDENTIAL', PW / 2, PH - 7, { align: 'center' })
+    doc.text(`Report ID: ${reportId}`, M, PH - 6)
+    doc.text(`Page ${p - 1} of ${total - 1}`, PW - M, PH - 6, { align: 'right' })
+    doc.text('CONFIDENTIAL', PW / 2, PH - 6, { align: 'center' })
   }
 
   return doc.output('blob') as unknown as Blob

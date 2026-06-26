@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 [build]
   publish = "dist"
   functions = "netlify/functions"
@@ -20,3 +21,34 @@
   functionsPort = 9999
   publish = "dist"
   autoLaunch = true
+=======
+# Netlify build configuration for Vectra Security Platform (Next.js frontend)
+# Repo layout: /frontend (Next.js) + /backend (FastAPI — deployed separately)
+
+[build]
+  # Tell Netlify the app lives in the frontend/ subdirectory.
+  # All commands and paths below are relative to this directory.
+  base    = "frontend"
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  # Next.js 15+ requires Node 18+. Pin to 20 LTS for stability.
+  NODE_VERSION = "20"
+  # expo + react-native have peer-dep conflicts with React 19.
+  # --legacy-peer-deps makes npm install succeed the same way it does locally.
+  NPM_FLAGS = "--legacy-peer-deps"
+
+# @netlify/plugin-nextjs is the officially supported adapter for Next.js on Netlify.
+# It handles: App Router, dynamic routes ([scanId] etc.), server components,
+# streaming, and image optimisation — without requiring output: 'export'.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Catch-all redirect so Next.js client-side routing works on direct URL access.
+# The plugin adds its own rewrite rules, but this is a safe fallback.
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+>>>>>>> a0000cd (first commit)

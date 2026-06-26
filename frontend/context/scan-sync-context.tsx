@@ -3,14 +3,8 @@
 /**
  * ScanSyncProvider — global background service at app-layout level.
  *
- * For Quick Scan:
- *   Writes status changes immediately, debounces logs/findings.
- *   Writes each new finding to users/{uid}/findings/{id}.
- *
- * For Full Scan (profile === 'FULL_SCAN'):
- *   Also writes each new asset to users/{uid}/assets/{id}.
- *   Also writes each new CVE  to users/{uid}/cves/{id}.
- *   Assets from Full Scan have cveCorrelated=true so CveSyncContext skips them.
+ * Writes scan metadata + findings/assets/CVEs to Firestore sub-collections
+ * as SSE events arrive, and backfills completed scans once per session.
  */
 
 import { createContext, useEffect, useRef, useState } from 'react'
@@ -31,10 +25,10 @@ export const ScanSyncContext = createContext<null>(null)
 interface SseConn {
   es: EventSource
   lastFindingCount: number
-  lastAssetCount: number
-  lastCveCount: number
-  lastStatus: string
-  target: string
+  lastAssetCount:   number
+  lastCveCount:     number
+  lastStatus:       string
+  target:           string
 }
 
 function findingToDoc(
@@ -45,7 +39,7 @@ function findingToDoc(
   timestamp: string,
 ): FirestoreFinding {
   return {
-    findingId: `${scanId}_${String(idx).padStart(4, '0')}`,
+    findingId:   `${scanId}_${String(idx).padStart(4, '0')}`,
     scanId,
     target,
     title:       finding.title,
@@ -87,10 +81,10 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
       if (!ACTIVE_STATUSES.has(scan.status)) continue
       if (connections.has(scan.scanId)) continue
 
-      const scanId    = scan.scanId
-      const target    = scan.target
+      const scanId     = scan.scanId
+      const target     = scan.target
       const isFullScan = scan.scanProfile === 'FULL_SCAN'
-      const es        = new EventSource(`${API_BASE}/scan/${scanId}/stream`)
+      const es         = new EventSource(`${API_BASE}/scan/${scanId}/stream`)
       const conn: SseConn = {
         es,
         lastFindingCount: 0,
@@ -111,23 +105,26 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
           const isTerminal        = !ACTIVE_STATUSES.has(newStatus)
           const statusChanged     = newStatus !== currentConn.lastStatus
 
-          // ── Immediate: write status on every change ─────────────────
+          // ── Immediate: write status + counts on every change ───────────
           if (statusChanged) {
             currentConn.lastStatus = newStatus
             const immediateUpdate: Partial<FirestoreScan> = {
-              status:      newStatus,
-              progress:    data.progress ?? 0,
-              currentStep: data.currentStep ?? '',
+              status:        newStatus,
+              progress:      data.progress ?? 0,
+              currentStep:   data.currentStep ?? '',
+              totalFindings: data.total_findings ?? 0,
+              totalCves:     data.total_cves ?? 0,
+              totalAssets:   data.total_assets ?? 0,
             }
             if (isTerminal) {
               immediateUpdate.completedAt = new Date().toISOString()
-              if (data.duration) immediateUpdate.duration    = data.duration
-              if (data.error)    immediateUpdate.error       = data.error
+              if (data.duration) immediateUpdate.duration = data.duration
+              if (data.error)    immediateUpdate.error    = data.error
             }
             updateFirestoreScan(uid, scanId, immediateUpdate).catch(() => {})
           }
 
-          // ── Immediate: write each new finding ──────────────────────
+          // ── Immediate: write each new finding to findings sub-collection ──
           const allFindings: ApiFinding[] = data.findings ?? []
           if (allFindings.length > currentConn.lastFindingCount) {
             const ts = new Date().toISOString()
@@ -138,7 +135,7 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
             currentConn.lastFindingCount = allFindings.length
           }
 
-          // ── Full Scan: write each new asset ────────────────────────
+          // ── Full Scan: write each new asset + CVE ──────────────────────
           if (isFullScan) {
             const allAssets: FirestoreAsset[] = data.assets ?? []
             if (allAssets.length > currentConn.lastAssetCount) {
@@ -148,7 +145,6 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
               currentConn.lastAssetCount = allAssets.length
             }
 
-            // ── Full Scan: write each new CVE ────────────────────────
             const allCves: FirestoreCve[] = data.cves ?? []
             if (allCves.length > currentConn.lastCveCount) {
               allCves.slice(currentConn.lastCveCount).forEach((cve) => {
@@ -158,25 +154,24 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
             }
           }
 
-          // ── Debounced: write bulk scan metadata ─────────────────────
+          // ── Debounced: write bulk scan metadata (logs, findings array, etc.) ──
           const existing = bulkTimers.get(scanId)
           if (existing) clearTimeout(existing)
 
           const bulkUpdate: Partial<FirestoreScan> = {
-            status:           newStatus,
-            progress:         data.progress ?? 0,
-            currentStep:      data.currentStep ?? '',
-            logs:             data.logs ?? [],
-            totalFindings:    data.total_findings ?? 0,
-            findings:         data.findings ?? [],
+            status:            newStatus,
+            progress:          data.progress ?? 0,
+            currentStep:       data.currentStep ?? '',
+            logs:              data.logs ?? [],
+            totalFindings:     data.total_findings ?? 0,
+            findings:          data.findings ?? [],
             templatesExecuted: data.templatesExecuted,
-            duration:         data.duration ?? undefined,
-            error:            data.error ?? undefined,
-            // Full Scan counters
-            totalAssets:      data.total_assets ?? undefined,
-            liveAssetsCount:  data.live_assets_count ?? undefined,
-            totalCves:        data.total_cves ?? undefined,
-            engines:          data.engines ?? undefined,
+            duration:          data.duration ?? undefined,
+            error:             data.error ?? undefined,
+            totalAssets:       data.total_assets ?? undefined,
+            liveAssetsCount:   data.live_assets_count ?? undefined,
+            totalCves:         data.total_cves ?? undefined,
+            engines:           data.engines ?? undefined,
           }
           if (isTerminal) bulkUpdate.completedAt = new Date().toISOString()
 
@@ -189,7 +184,6 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
           )
           bulkTimers.set(scanId, timer)
 
-          // Close on terminal
           if (isTerminal || data.done) {
             es.close()
             connections.delete(scanId)
@@ -214,17 +208,58 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Backfill findings from completed scans (once per session)
+    // ── Backfill: ensure findings/CVEs/assets are in Firestore for completed scans.
+    // Fetches fresh data from the backend API first; falls back to scan.findings if unavailable.
+    // This handles the race where SSE was missed (fast scan completed before SSE opened).
     for (const scan of scans) {
       if (scan.status !== 'completed') continue
-      if (scan.totalFindings === 0 || scan.findings.length === 0) continue
       if (backfilled.has(scan.scanId)) continue
-
       backfilled.add(scan.scanId)
-      const ts = scan.completedAt ?? scan.createdAt
-      scan.findings.forEach((f, idx) => {
-        writeFinding(uid, findingToDoc(f, idx, scan.scanId, scan.target, ts)).catch(() => {})
-      })
+
+      const scanId     = scan.scanId
+      const target     = scan.target
+      const isFullScan = scan.scanProfile === 'FULL_SCAN'
+      const ts         = scan.completedAt ?? scan.createdAt
+
+      fetch(`${API_BASE}/scan/${scanId}`)
+        .then(async (res) => {
+          if (!res.ok) throw new Error('scan not in backend memory')
+          const apiScan = await res.json()
+
+          const findings: ApiFinding[] = apiScan.findings ?? []
+
+          // Write each finding to the findings collection
+          findings.forEach((f, idx) => {
+            writeFinding(uid, findingToDoc(f, idx, scanId, target, ts)).catch(() => {})
+          })
+
+          // Ensure scan doc has accurate final counts + findings array
+          updateFirestoreScan(uid, scanId, {
+            totalFindings:     apiScan.total_findings ?? findings.length,
+            findings:          findings,
+            totalCves:         apiScan.total_cves ?? 0,
+            templatesExecuted: apiScan.templatesExecuted ?? 0,
+          }).catch(() => {})
+
+          // Full Scan: write CVEs and assets to their sub-collections
+          if (isFullScan) {
+            ;(apiScan.cves ?? []).forEach((cve: FirestoreCve) => {
+              writeCve(uid, cve).catch(() => {})
+            })
+            ;(apiScan.assets ?? []).forEach((asset: FirestoreAsset) => {
+              writeAsset(uid, asset).catch(() => {})
+            })
+          }
+        })
+        .catch(() => {
+          // Backend scan no longer in memory (server restarted) — fall back to scan doc
+          const findings = scan.findings ?? []
+          if (findings.length > 0) {
+            findings.forEach((f, idx) => {
+              writeFinding(uid, findingToDoc(f, idx, scanId, target, ts)).catch(() => {})
+            })
+          }
+        })
     }
   }, [scans, user])
 
