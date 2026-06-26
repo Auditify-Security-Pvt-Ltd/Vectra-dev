@@ -1,5 +1,5 @@
 // Strip any trailing slash so ${API_BASE}/path never produces a double-slash URL
-export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'https://plots-stylus-papua-probe.trycloudflare.com').replace(/\/$/, '')
 
 export interface ApiFinding {
   source?: string       // nuclei | vectra | wpscan
