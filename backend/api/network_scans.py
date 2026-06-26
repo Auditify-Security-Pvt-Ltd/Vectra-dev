@@ -6,7 +6,7 @@ import re
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -34,13 +34,17 @@ router = APIRouter(prefix="/network")
 _SCANS: Dict[str, dict]         = {}
 _TASKS: Dict[str, asyncio.Task] = {}
 
-MAX_CONCURRENT = 2
-_PENDING: List[Tuple[str, str, str]] = []
+# Per-engine Nuclei timeout (applies within each host / total quick scan)
+NUCLEI_TIMEOUT_SECS = 900   # 15 min — unchanged from original
 
-# 15-minute timeout per nuclei target (full) or total (quick)
-NUCLEI_TIMEOUT_SECS = 900
+# Statuses that count as "active" for per-user concurrency
+_ACTIVE = frozenset({"queued", "host_discovery", "port_scan", "parallel_analysis"})
 
-_ACTIVE = {"queued", "host_discovery", "port_scan", "parallel_analysis"}
+# Terminal statuses (SSE stream closes)
+_TERMINAL = frozenset({"completed", "completed_timeout", "failed", "cancelled"})
+
+from utils.scan_queue import UserScanQueue, QUICK_SCAN_TIMEOUT_SECS, FULL_SCAN_TIMEOUT_SECS
+_QUEUE = UserScanQueue(_SCANS, _TASKS, _ACTIVE)
 
 # ── Port-based network security check rules ───────────────────────────
 _NET_CHECK_RULES: List[Tuple[int, str, str, str]] = [
@@ -142,8 +146,6 @@ def _fmt(seconds: float) -> str:
     return f"{m}m {s}s" if m else f"{s}s"
 
 
-def _count_active() -> int:
-    return sum(1 for s in _SCANS.values() if s["status"] in _ACTIVE)
 
 
 def _set_engine(scan_id: str, engine: str, eng_status: str, count: int = -1) -> None:
@@ -155,11 +157,12 @@ def _set_engine(scan_id: str, engine: str, eng_status: str, count: int = -1) -> 
         engines[engine]["count"] = count
 
 
-def _blank_scan(scan_id: str, target: str, profile: str) -> dict:
+def _blank_scan(scan_id: str, target: str, profile: str, user_id: str = "anonymous") -> dict:
     return {
         "scanId":         scan_id,
         "target":         target,
         "scanProfile":    profile,
+        "userId":         user_id,
         "status":         "queued",
         "progress":       0,
         "currentStep":    "Queued",
@@ -183,24 +186,6 @@ def _blank_scan(scan_id: str, target: str, profile: str) -> dict:
     }
 
 
-# ── Queue ─────────────────────────────────────────────────────────────
-
-async def _try_start_next() -> None:
-    global _PENDING
-    while _PENDING and _count_active() < MAX_CONCURRENT:
-        scan_id, target, profile = _PENDING.pop(0)
-        if _SCANS.get(scan_id, {}).get("status") != "queued":
-            continue
-        task = asyncio.create_task(_run_and_release(scan_id, target, profile))
-        _TASKS[scan_id] = task
-        break
-
-
-async def _run_and_release(scan_id: str, target: str, profile: str) -> None:
-    try:
-        await _execute_network_scan(scan_id, target, profile)
-    finally:
-        asyncio.create_task(_try_start_next())
 
 
 # Regex to extract tech name and version from nmap 'version' field.
@@ -485,16 +470,17 @@ async def _engine_network_checks(scan_id: str, hosts: List[dict]) -> None:
 
 async def _execute_network_scan(scan_id: str, target: str, profile: str) -> None:
     """
-    Pipeline (new architecture):
-      Stage 1  HOST_DISCOVERY   — nmap -sn (ping sweep)
-      Stage 2  PORT_SCAN        — nmap -Pn -sV per live host
+    Pipeline:
+      Stage 1  HOST_DISCOVERY    — nmap -sn (ping sweep)
+      Stage 2  PORT_SCAN         — nmap -Pn -sV per live host
       Stage 3  PARALLEL_ANALYSIS — CVE + Nuclei + Network Checks simultaneously
-      Stage 4  COMPLETED
+      Stage 4  COMPLETED (or COMPLETED_TIMEOUT if 15/30 min exceeded)
     """
     started_at = time.monotonic()
     full_scan  = (profile == "FULL_SCAN")
+    timeout    = FULL_SCAN_TIMEOUT_SECS if full_scan else QUICK_SCAN_TIMEOUT_SECS
 
-    try:
+    async def _pipeline() -> None:
         # ── Stage 1: HOST DISCOVERY ───────────────────────────────────────
         _update(scan_id, status="host_discovery", progress=5,
                 currentStep=f"Discovering live hosts in {target}")
@@ -612,6 +598,23 @@ async def _execute_network_scan(scan_id: str, target: str, profile: str) -> None
         )
         logger.info(f"[{scan_id}] Network scan complete in {elapsed}")
 
+    # ── Wrap pipeline with scan-type timeout ─────────────────────────
+    try:
+        await asyncio.wait_for(_pipeline(), timeout=timeout)
+
+    except asyncio.TimeoutError:
+        elapsed        = _fmt(time.monotonic() - started_at)
+        total_findings = _SCANS[scan_id]["total_findings"]
+        total_cves     = len(_SCANS[scan_id]["cves"])
+        _log(
+            scan_id,
+            f"[Timeout] {timeout // 60}-minute limit reached — "
+            f"{total_findings} finding(s), {total_cves} CVE(s) preserved",
+        )
+        _update(scan_id, status="completed_timeout", progress=100,
+                currentStep="Completed (Timeout Reached)", duration=elapsed)
+        logger.info(f"[{scan_id}] Network scan timed out after {elapsed}")
+
     except asyncio.CancelledError:
         elapsed = _fmt(time.monotonic() - started_at)
         _update(scan_id, status="cancelled", currentStep="Cancelled", duration=elapsed)
@@ -636,14 +639,15 @@ async def network_health() -> NetworkHealthResponse:
 
 @router.post("/scan/start", status_code=status.HTTP_200_OK, tags=["Network"])
 async def start_network_scan(request: NetworkScanRequest) -> dict:
-    target  = request.target
-    profile = request.scanProfile.value
-    scan_id = _build_scan_id()
+    target   = request.target
+    profile  = request.scanProfile.value
+    user_id  = request.userId
+    scan_id  = _build_scan_id()
 
-    _SCANS[scan_id] = _blank_scan(scan_id, target, profile)
-    _PENDING.append((scan_id, target, profile))
-    asyncio.create_task(_try_start_next())
-    logger.info(f"[{scan_id}] Network scan queued [{profile}] for {target}")
+    _SCANS[scan_id] = _blank_scan(scan_id, target, profile, user_id)
+    _QUEUE.enqueue(user_id, scan_id, target, profile)
+    asyncio.create_task(_QUEUE.try_start_next(user_id, _execute_network_scan))
+    logger.info(f"[{scan_id}] Network scan queued [{profile}] for {target} (user={user_id})")
 
     return {"scanId": scan_id, "status": "queued", "scanProfile": profile}
 
@@ -686,7 +690,7 @@ async def stream_network_scan(scan_id: str) -> StreamingResponse:
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
 
-                if scan["status"] in ("completed", "failed", "cancelled"):
+                if scan["status"] in _TERMINAL:
                     yield f"data: {json.dumps({'done': True})}\n\n"
                     break
 
@@ -707,11 +711,10 @@ async def stream_network_scan(scan_id: str) -> StreamingResponse:
 
 @router.post("/scan/{scan_id}/cancel", tags=["Network"])
 async def cancel_network_scan(scan_id: str) -> dict:
-    global _PENDING
     if scan_id not in _SCANS:
         raise HTTPException(status_code=404, detail="Network scan not found")
 
-    _PENDING = [(sid, t, p) for sid, t, p in _PENDING if sid != scan_id]
+    _QUEUE.remove(scan_id)
     task = _TASKS.get(scan_id)
     if task and not task.done():
         task.cancel()

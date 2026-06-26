@@ -33,19 +33,21 @@ const STATUS_BADGE: Record<string, string> = {
   host_discovery:    'bg-violet-500/10 text-violet-400 border-violet-500/20',
   port_scan:         'bg-blue-500/10 text-blue-400 border-blue-500/20',
   parallel_analysis: 'bg-primary/10 text-primary border-primary/20',
-  completed:         'bg-green-500/10 text-green-500 border-green-500/20',
-  failed:            'bg-red-500/10 text-red-500 border-red-500/20',
-  cancelled:         'bg-gray-500/10 text-gray-400 border-gray-500/20',
+  completed:          'bg-green-500/10 text-green-500 border-green-500/20',
+  completed_timeout:  'bg-orange-500/10 text-orange-500 border-orange-500/20',
+  failed:             'bg-red-500/10 text-red-500 border-red-500/20',
+  cancelled:          'bg-gray-500/10 text-gray-400 border-gray-500/20',
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  queued:            'Queued',
-  host_discovery:    'Host Discovery',
-  port_scan:         'Port Scan',
-  parallel_analysis: 'Analyzing',
-  completed:         'Completed',
-  failed:            'Failed',
-  cancelled:         'Cancelled',
+  queued:             'Queued',
+  host_discovery:     'Host Discovery',
+  port_scan:          'Port Scan',
+  parallel_analysis:  'Analyzing',
+  completed:          'Completed',
+  completed_timeout:  'Completed (Timeout)',
+  failed:             'Failed',
+  cancelled:          'Cancelled',
 }
 
 function formatDate(iso: string) {
@@ -76,7 +78,7 @@ function NewNetworkScanModal({
     if (!user || !target.trim()) return
     setStarting(true); setErrMsg(null)
     try {
-      const resp   = await startNetworkScan(target.trim(), profile)
+      const resp   = await startNetworkScan(target.trim(), profile, user.uid)
       const scanId = resp.scanId
       const now    = new Date().toISOString()
 
@@ -208,7 +210,7 @@ export default function NetworkSecurityPage() {
   )
 
   const activeCount    = scans.filter((s) => NETWORK_ACTIVE_STATUSES.has(s.status)).length
-  const completedCount = scans.filter((s) => s.status === 'completed').length
+  const completedCount = scans.filter((s) => s.status === 'completed' || s.status === 'completed_timeout').length
   const totalFindings  = scans.reduce((n, s) => n + (s.totalFindings ?? 0), 0)
 
   return (
@@ -294,9 +296,10 @@ export default function NetworkSecurityPage() {
                     onClick={() => router.push(`/app/network-security/scans/${scan.scanId}`)}
                   >
                     <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                      scan.status === 'completed' ? 'bg-green-500/10' :
-                      scan.status === 'failed'    ? 'bg-red-500/10'   :
-                      isActive                    ? 'bg-blue-500/10'  : 'bg-foreground/5'
+                      scan.status === 'completed'         ? 'bg-green-500/10'  :
+                      scan.status === 'completed_timeout' ? 'bg-orange-500/10' :
+                      scan.status === 'failed'            ? 'bg-red-500/10'    :
+                      isActive                            ? 'bg-blue-500/10'   : 'bg-foreground/5'
                     }`}>
                       {isActive
                         ? <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />

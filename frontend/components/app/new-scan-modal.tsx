@@ -76,7 +76,7 @@ export function NewScanModal({ open, onOpenChange, defaultTarget }: Props) {
 
     setLoading(true)
     try {
-      const result = await startScan(url, scanProfile)
+      const result = await startScan(url, scanProfile, user.uid)
       const { scanId } = result
 
       await createFirestoreScan(user.uid, {

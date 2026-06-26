@@ -14,9 +14,10 @@ import { useAuth } from '@/context/auth-context'
 
 const STATUS_BADGE: Record<string, string> = {
   // terminal
-  completed:   'bg-green-500/10 text-green-500',
-  failed:      'bg-red-500/10 text-red-500',
-  cancelled:   'bg-gray-500/10 text-gray-400',
+  completed:          'bg-green-500/10 text-green-500',
+  completed_timeout:  'bg-orange-500/10 text-orange-500',
+  failed:             'bg-red-500/10 text-red-500',
+  cancelled:          'bg-gray-500/10 text-gray-400',
   // Quick Scan active
   queued:       'bg-yellow-500/10 text-yellow-500',
   initializing: 'bg-blue-500/10 text-blue-400',
@@ -38,6 +39,7 @@ const STATUS_LABEL: Record<string, string> = {
   detecting_technologies: 'Tech Summary',
   cve_analysis:           'CVE Analysis',
   completed:              'Completed',
+  completed_timeout:      'Completed (Timeout)',
   failed:                 'Failed',
   cancelled:              'Cancelled',
   queued:                 'Queued',
@@ -131,7 +133,7 @@ export default function ScansPage() {
   const queuedScans    = scans.filter((s) => s.status === 'queued').length
   const runningScans   = scans.filter((s) => ACTIVE_STATUSES.has(s.status) && s.status !== 'queued').length
   const totalFindings  = scans.reduce((n, s) => n + s.totalFindings, 0)
-  const completedScans = scans.filter((s) => s.status === 'completed').length
+  const completedScans = scans.filter((s) => s.status === 'completed' || s.status === 'completed_timeout').length
 
   return (
     <div className="p-8 space-y-8">

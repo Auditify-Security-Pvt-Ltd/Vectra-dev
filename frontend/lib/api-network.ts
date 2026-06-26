@@ -36,11 +36,12 @@ export interface NetworkScanStreamPayload {
 export async function startNetworkScan(
   target: string,
   scanProfile: NetworkScanProfile = 'QUICK_SCAN',
+  userId: string = 'anonymous',
 ): Promise<NetworkScanStartResponse> {
   const res = await fetch(`${API_BASE}/network/scan/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ target, scanProfile }),
+    body: JSON.stringify({ target, scanProfile, userId }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))

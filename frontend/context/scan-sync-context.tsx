@@ -212,7 +212,7 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
     // Fetches fresh data from the backend API first; falls back to scan.findings if unavailable.
     // This handles the race where SSE was missed (fast scan completed before SSE opened).
     for (const scan of scans) {
-      if (scan.status !== 'completed') continue
+      if (scan.status !== 'completed' && scan.status !== 'completed_timeout') continue
       if (backfilled.has(scan.scanId)) continue
       backfilled.add(scan.scanId)
 

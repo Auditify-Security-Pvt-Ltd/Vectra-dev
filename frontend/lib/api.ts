@@ -42,11 +42,12 @@ export interface ApiScanStatus {
 export async function startScan(
   target: string,
   scanProfile: ScanProfile = 'FULL_SCAN',
+  userId: string = 'anonymous',
 ): Promise<ApiScanStartResponse> {
   const res = await fetch(`${API_BASE}/scan/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ target, scanProfile }),
+    body: JSON.stringify({ target, scanProfile, userId }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))

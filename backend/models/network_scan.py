@@ -15,6 +15,7 @@ class NetworkScanProfile(str, Enum):
 class NetworkScanRequest(BaseModel):
     target:      str
     scanProfile: NetworkScanProfile = NetworkScanProfile.QUICK_SCAN
+    userId:      str = "anonymous"  # Firebase UID passed by the authenticated frontend
 
     @field_validator("target")
     @classmethod

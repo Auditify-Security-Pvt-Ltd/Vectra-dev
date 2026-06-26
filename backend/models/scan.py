@@ -23,6 +23,7 @@ class ScanProfile(str, Enum):
 class ScanRequest(BaseModel):
     target: HttpUrl
     scanProfile: ScanProfile = ScanProfile.FULL_SCAN
+    userId: str = "anonymous"   # Firebase UID passed by the authenticated frontend
 
     @field_validator("target")
     @classmethod
