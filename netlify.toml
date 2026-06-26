@@ -13,7 +13,8 @@
   NODE_VERSION = "20"
   # expo + react-native have peer-dep conflicts with React 19.
   # --legacy-peer-deps makes npm install succeed the same way it does locally.
-  NPM_FLAGS = "--legacy-peer-deps"
+  NPM_FLAGS    = "--legacy-peer-deps"
+  PNPM_FLAGS   = "--no-frozen-lockfile"
 
 # @netlify/plugin-nextjs is the officially supported adapter for Next.js on Netlify.
 # It handles: App Router, dynamic routes ([scanId] etc.), server components,
