@@ -74,7 +74,19 @@ export default function ScansPage() {
     if (!user) return
     setActionLoading(scanId)
     try {
-      await cancelScan(scanId)
+      const result = await cancelScan(scanId)
+
+      if (!result.success) {
+        toast.info(result.reason ?? 'Scan is no longer active')
+        // Reflect the actual terminal state in Firestore so the list updates
+        const actualStatus = result.reason?.includes('not found') ? 'cancelled' : 'cancelled'
+        await updateFirestoreScan(user.uid, scanId, {
+          status: actualStatus,
+          currentStep: result.reason ?? 'Cancelled',
+        }).catch(() => {})
+        return
+      }
+
       await updateFirestoreScan(user.uid, scanId, {
         status: 'cancelled',
         currentStep: 'Cancelled',

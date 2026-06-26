@@ -31,6 +31,7 @@ const SEVERITY_COLORS: Record<string, string> = {
 
 const STATUS_COLOR: Record<string, string> = {
   completed:              'text-green-500',
+  completed_timeout:      'text-orange-500',
   failed:                 'text-red-500',
   cancelled:              'text-gray-400',
   queued:                 'text-yellow-500',
@@ -52,6 +53,7 @@ const STATUS_LABEL: Record<string, string> = {
   detecting_technologies: 'Tech Stack Summary',
   cve_analysis:           'CVE Analysis',
   completed:              'Completed',
+  completed_timeout:      'Completed (Timeout)',
   failed:                 'Failed',
   cancelled:              'Cancelled',
   queued:                 'Queued',
@@ -169,7 +171,25 @@ export default function ScanDetailPage() {
     if (!user || !scan) return
     setActionLoading(true)
     try {
-      await cancelScan(scanId)
+      const result = await cancelScan(scanId)
+
+      if (!result.success) {
+        // Scan is already terminal (completed, failed, etc.) or not in backend memory
+        toast.info(result.reason ?? 'Scan is no longer active')
+        // Sync UI to actual backend state; fall back to "cancelled" if backend lost it
+        try {
+          const state = await getScanStatus(scanId)
+          const updates = { status: state.status, currentStep: state.currentStep }
+          setScan((prev) => (prev ? { ...prev, ...updates } : prev))
+          await updateFirestoreScan(user.uid, scanId, updates).catch(() => {})
+        } catch {
+          const updates: Partial<FirestoreScan> = { status: 'cancelled', currentStep: 'Cancelled' }
+          setScan((prev) => (prev ? { ...prev, ...updates } : prev))
+          await updateFirestoreScan(user.uid, scanId, updates).catch(() => {})
+        }
+        return
+      }
+
       const updates: Partial<FirestoreScan> = { status: 'cancelled', currentStep: 'Cancelled' }
       setScan((prev) => (prev ? { ...prev, ...updates } : prev))
       await updateFirestoreScan(user.uid, scanId, updates)
@@ -287,7 +307,7 @@ export default function ScanDetailPage() {
   }
 
   const isActive    = ACTIVE_STATUSES.has(scan.status)
-  const isCancelled = scan.status === 'cancelled' || scan.status === 'failed'
+  const isCancelled = scan.status === 'cancelled' || scan.status === 'failed' || scan.status === 'completed_timeout'
   const statusLabel = STATUS_LABEL[scan.status] ?? scan.status.replace(/_/g, ' ')
 
   const severityCounts = scan.findings.reduce<Record<string, number>>((acc, f) => {
@@ -315,7 +335,8 @@ export default function ScanDetailPage() {
               className="rounded-lg border-destructive/30 text-destructive hover:bg-destructive/10 gap-1.5"
               onClick={handleStop}
             >
-              <StopCircle className="w-4 h-4" />Stop
+              <StopCircle className="w-4 h-4" />
+              {actionLoading ? 'Stopping…' : 'Stop'}
             </Button>
           )}
           {isCancelled && (

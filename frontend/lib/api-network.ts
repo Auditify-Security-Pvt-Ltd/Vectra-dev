@@ -50,9 +50,16 @@ export async function startNetworkScan(
   return res.json()
 }
 
-export async function cancelNetworkScan(scanId: string): Promise<{ scanId: string; status: string }> {
+export interface CancelNetworkScanResult {
+  success: boolean
+  reason?: string
+  scanId?: string
+  status?: string
+}
+
+export async function cancelNetworkScan(scanId: string): Promise<CancelNetworkScanResult> {
   const res = await fetch(`${API_BASE}/network/scan/${scanId}/cancel`, { method: 'POST' })
-  if (!res.ok) throw new Error(`Cancel failed: ${res.status}`)
+  if (!res.ok) throw new Error(`Cancel request failed: ${res.status}`)
   return res.json()
 }
 

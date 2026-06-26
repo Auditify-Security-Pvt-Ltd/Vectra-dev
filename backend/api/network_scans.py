@@ -712,7 +712,11 @@ async def stream_network_scan(scan_id: str) -> StreamingResponse:
 @router.post("/scan/{scan_id}/cancel", tags=["Network"])
 async def cancel_network_scan(scan_id: str) -> dict:
     if scan_id not in _SCANS:
-        raise HTTPException(status_code=404, detail="Network scan not found")
+        return {"success": False, "reason": "Scan not found"}
+
+    current_status = _SCANS[scan_id]["status"]
+    if current_status in _TERMINAL:
+        return {"success": False, "reason": f"Scan already {current_status.replace('_', ' ')}"}
 
     _QUEUE.remove(scan_id)
     task = _TASKS.get(scan_id)
@@ -721,7 +725,7 @@ async def cancel_network_scan(scan_id: str) -> dict:
 
     _update(scan_id, status="cancelled", currentStep="Cancelled")
     _log(scan_id, "Scan cancelled by user")
-    return {"scanId": scan_id, "status": "cancelled"}
+    return {"success": True, "scanId": scan_id, "status": "cancelled"}
 
 
 @router.get("/scans", tags=["Network"])

@@ -745,18 +745,20 @@ async def stream_scan_events(scan_id: str) -> StreamingResponse:
 @router.post("/scan/{scan_id}/cancel", tags=["Scans"])
 async def cancel_scan(scan_id: str) -> dict:
     if scan_id not in _SCANS:
-        raise HTTPException(status_code=404, detail="Scan not found")
+        return {"success": False, "reason": "Scan not found"}
 
-    # Remove from user's pending queue (if still queued)
+    current_status = _SCANS[scan_id]["status"]
+    if current_status in _TERMINAL:
+        return {"success": False, "reason": f"Scan already {current_status.replace('_', ' ')}"}
+
     _QUEUE.remove(scan_id)
-
     task = _TASKS.get(scan_id)
     if task and not task.done():
         task.cancel()
 
     _update_scan(scan_id, status="cancelled", currentStep="Cancelled")
     _append_log(scan_id, "Scan Cancelled by User")
-    return {"scanId": scan_id, "status": "cancelled"}
+    return {"success": True, "scanId": scan_id, "status": "cancelled"}
 
 
 @router.post("/scan/{scan_id}/restart", tags=["Scans"])

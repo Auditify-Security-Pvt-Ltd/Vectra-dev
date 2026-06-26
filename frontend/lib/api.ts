@@ -62,9 +62,16 @@ export async function getScanStatus(scanId: string): Promise<ApiScanStatus> {
   return res.json()
 }
 
-export async function cancelScan(scanId: string): Promise<{ scanId: string; status: string }> {
+export interface CancelScanResult {
+  success: boolean
+  reason?: string   // populated when success is false
+  scanId?: string
+  status?: string
+}
+
+export async function cancelScan(scanId: string): Promise<CancelScanResult> {
   const res = await fetch(`${API_BASE}/scan/${scanId}/cancel`, { method: 'POST' })
-  if (!res.ok) throw new Error(`Cancel failed with ${res.status}`)
+  if (!res.ok) throw new Error(`Cancel request failed: ${res.status}`)
   return res.json()
 }
 

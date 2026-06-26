@@ -194,7 +194,19 @@ export default function NetworkSecurityPage() {
   async function handleStop(scanId: string) {
     setStopping(scanId)
     try {
-      await cancelNetworkScan(scanId)
+      const result = await cancelNetworkScan(scanId)
+
+      if (!result.success) {
+        toast.info(result.reason ?? 'Scan is no longer active')
+        if (user) {
+          await updateNetworkScan(user.uid, scanId, {
+            status: 'cancelled',
+            currentStep: result.reason ?? 'Cancelled',
+          }).catch(() => {})
+        }
+        return
+      }
+
       if (user) await updateNetworkScan(user.uid, scanId, { status: 'cancelled', currentStep: 'Cancelled' })
       toast.success('Scan stopped')
     } catch {
