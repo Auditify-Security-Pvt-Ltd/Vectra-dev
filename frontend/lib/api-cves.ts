@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://plots-stylus-papua-probe.trycloudflare.com'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://antibody-rss-challenging-duke.trycloudflare.com'
 
 export interface ApiCorrelationStart {
   correlationId: string
