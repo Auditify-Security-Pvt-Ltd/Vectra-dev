@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  BarChart3, Network, Target, Zap, AlertTriangle, Bug,
+  BarChart3, Network, Target, Zap, AlertTriangle, ShieldAlert,
   Cloud, FileText, Sparkles, Users, LogOut, Settings,
   ChevronDown, ChevronRight,
   Globe, Wifi, Server, Shield, Lock,
@@ -48,11 +48,9 @@ const MODULES: NavModule[] = [
     icon: Globe,
     href: '/app/dashboard',
     items: [
-      { icon: Network,       label: 'Assets',   href: '/app/assets'   },
-      { icon: Target,        label: 'Targets',  href: '/app/targets'  },
-      { icon: Zap,           label: 'Scans',    href: '/app/scans'    },
-      { icon: AlertTriangle, label: 'Findings', href: '/app/findings' },
-      { icon: Bug,           label: 'CVEs',     href: '/app/cves'     },
+      { icon: Network, label: 'Assets',  href: '/app/assets'  },
+      { icon: Target,  label: 'Targets', href: '/app/targets' },
+      { icon: Zap,     label: 'Scans',   href: '/app/scans'   },
     ],
   },
   {
@@ -61,10 +59,8 @@ const MODULES: NavModule[] = [
     icon: Wifi,
     href: '/app/network-security',
     items: [
-      { icon: Zap,           label: 'Scans',    href: '/app/network-security'          },
-      { icon: Server,        label: 'Hosts',    href: '/app/network-security/hosts'    },
-      { icon: AlertTriangle, label: 'Findings', href: '/app/network-security/findings' },
-      { icon: Bug,           label: 'CVEs',     href: '/app/network-security/cves'     },
+      { icon: Zap,    label: 'Scans', href: '/app/network-security'       },
+      { icon: Server, label: 'Hosts', href: '/app/network-security/hosts' },
     ],
   },
   {
@@ -80,7 +76,7 @@ const MODULES: NavModule[] = [
       { icon: FileText,      label: 'Storage Security',  href: '/app/cloud-security' },
       { icon: Wifi,          label: 'Network Security',  href: '/app/cloud-security' },
       { icon: AlertTriangle, label: 'Misconfigurations', href: '/app/cloud-security' },
-      { icon: Bug,           label: 'Cloud Findings',    href: '/app/cloud-security' },
+      { icon: AlertTriangle, label: 'Cloud Findings',    href: '/app/cloud-security' },
     ],
   },
 ]
@@ -90,9 +86,10 @@ const TOP_ITEMS: StandaloneItem[] = [
 ]
 
 const BOTTOM_ITEMS: StandaloneItem[] = [
-  { icon: FileText,  label: 'Reports',     href: '/app/reports'     },
-  { icon: Sparkles,  label: 'AI Analysis', href: '/app/ai-analysis' },
-  { icon: Users,     label: 'Team',        href: '/app/team'        },
+  { icon: ShieldAlert, label: 'Vulnerability Management', href: '/app/findings'    },
+  { icon: FileText,    label: 'Reports',                  href: '/app/reports'     },
+  { icon: Sparkles,    label: 'AI Analysis',              href: '/app/ai-analysis' },
+  { icon: Users,       label: 'Team',                     href: '/app/team'        },
 ]
 
 // ── Route → module detection ──────────────────────────────────────────
@@ -101,12 +98,11 @@ function getModuleForPath(pathname: string): string | null {
   if (
     pathname.startsWith('/app/assets') ||
     pathname.startsWith('/app/targets') ||
-    pathname.startsWith('/app/scans') ||
-    pathname.startsWith('/app/findings') ||
-    pathname.startsWith('/app/cves')
+    pathname.startsWith('/app/scans')
   ) return 'web-security'
   if (pathname.startsWith('/app/network-security')) return 'network-security'
   if (pathname.startsWith('/app/cloud-security'))   return 'cloud-security'
+  // /app/findings is now standalone — no module expansion
   return null
 }
 

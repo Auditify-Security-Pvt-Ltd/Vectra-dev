@@ -9,7 +9,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, LineChart, Line,
 } from 'recharts'
-import { NewScanModal } from '@/components/app/new-scan-modal'
+import { NewAssessmentModal } from '@/components/app/new-assessment-modal'
 import { listenToScans, ACTIVE_STATUSES, type FirestoreScan } from '@/lib/firestore-scans'
 import { listenToFindings, type FirestoreFinding } from '@/lib/firestore-findings'
 import { listenToAssets, type FirestoreAsset } from '@/lib/firestore-assets'
@@ -321,14 +321,14 @@ export default function DashboardPage() {
 
       {/* CVE Intelligence Summary */}
       {totalCves > 0 && (
-        <Card className="bg-card border-foreground/10 cursor-pointer hover:border-foreground/20 transition-colors" onClick={() => router.push('/app/cves')}>
+        <Card className="bg-card border-foreground/10 cursor-pointer hover:border-foreground/20 transition-colors" onClick={() => router.push('/app/findings?type=cves')}>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 text-muted-foreground" />
                 <CardTitle className="text-base">CVE Intelligence</CardTitle>
               </div>
-              <span className="text-xs text-primary hover:underline">View all →</span>
+              <span className="text-xs text-primary hover:underline">View in Findings →</span>
             </div>
           </CardHeader>
           <CardContent>
@@ -475,7 +475,7 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      <NewScanModal open={modalOpen} onOpenChange={setModalOpen} />
+      <NewAssessmentModal open={modalOpen} onOpenChange={setModalOpen} />
     </div>
   )
 }

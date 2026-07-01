@@ -454,7 +454,7 @@ export default function ScanDetailPage() {
               <Button
                 variant="ghost" size="sm"
                 className="h-8 rounded-lg text-primary hover:bg-primary/10 text-xs ml-auto"
-                onClick={() => router.push('/app/cves')}
+                onClick={() => router.push('/app/findings?type=cves')}
               >
                 View CVEs →
               </Button>
