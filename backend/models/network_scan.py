@@ -39,4 +39,3 @@ class NetworkScanRequest(BaseModel):
 class NetworkHealthResponse(BaseModel):
     status: str
     nmap:   bool
-    nuclei: bool

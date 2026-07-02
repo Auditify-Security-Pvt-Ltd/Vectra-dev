@@ -11,8 +11,10 @@ export interface NetworkScanStartResponse {
 export interface NetworkEngineStates {
   host_discovery?: { status: string; count: number }
   port_scan?: { status: string; count: number }
+  service_detection?: { status: string; count: number }
   cve_analysis?: { status: string; count: number }
-  nuclei?: { status: string; count: number }
+  network_checks?: { status: string; count: number }
+  ssl_analysis?: { status: string; count: number }
 }
 
 export interface NetworkScanStreamPayload {

@@ -18,11 +18,38 @@ export interface NetworkPort {
   state: string
 }
 
+export interface SslEndpointInfo {
+  port: number
+  tlsVersion: string
+  cipherSuite: string
+  cipherBits: number
+  isWeakTls: boolean
+  isWeakCipher: boolean
+  subject: string
+  issuer: string
+  notBefore?: string | null
+  notAfter?: string | null
+  daysUntilExpiry?: number | null
+  isExpired: boolean
+  expiringSoon: boolean
+  isSelfSigned: boolean
+  sans: string[]
+}
+
 export interface FirestoreNetworkHost {
   hostId: string
   scanId: string
   ip: string
   hostname?: string | null
+  os?: string
+  osRaw?: string
+  osFamily?: string
+  osConfidence?: number
+  mac?: string
+  vendor?: string
+  ssl?: SslEndpointInfo[]
+  riskScore?: number
+  riskLevel?: 'low' | 'medium' | 'high' | 'critical'
   status: 'up' | 'down'
   ports: NetworkPort[]
   isWebService: boolean

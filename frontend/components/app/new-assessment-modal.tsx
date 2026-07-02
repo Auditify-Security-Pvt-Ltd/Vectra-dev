@@ -140,10 +140,12 @@ export function NewAssessmentModal({ open, onOpenChange }: Props) {
         totalCves: 0,
         createdAt: now,
         engines: {
-          host_discovery: { status: 'pending', count: 0 },
-          port_scan:      { status: 'pending', count: 0 },
-          cve_analysis:   { status: 'pending', count: 0 },
-          nuclei:         { status: 'pending', count: 0 },
+          host_discovery:    { status: 'pending', count: 0 },
+          port_scan:         { status: 'pending', count: 0 },
+          service_detection: { status: 'pending', count: 0 },
+          cve_analysis:      { status: 'pending', count: 0 },
+          network_checks:    { status: 'pending', count: 0 },
+          ssl_analysis:      { status: 'pending', count: 0 },
         },
       })
 

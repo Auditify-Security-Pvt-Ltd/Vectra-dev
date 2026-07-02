@@ -20,7 +20,8 @@ from api.scans import router as scans_router
 from api.assets import router as assets_router
 from api.cves import router as cves_router
 from api.debug import router as debug_router
-from api.network_scans import router as network_router
+from api.network_scans import router as network_router, start_scan_sweeper
+from api.network_schedules import router as schedules_router, start_scheduler
 from utils.logger import get_logger
 
 # Root logger config — applied before any module imports log anything.
@@ -29,7 +30,7 @@ logger = get_logger(__name__)
 
 app = FastAPI(
     title="Vectra Security Platform",
-    description="Security scanning API — FastAPI + Nuclei",
+    description="Security scanning API — FastAPI + nmap",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -53,8 +54,11 @@ app.include_router(assets_router)
 app.include_router(cves_router)
 app.include_router(debug_router)
 app.include_router(network_router)
+app.include_router(schedules_router)
 
 
 @app.on_event("startup")
 async def on_startup() -> None:
+    start_scan_sweeper()
+    start_scheduler()
     logger.info("Vectra backend started — docs at /docs")

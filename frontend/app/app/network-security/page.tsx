@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Wifi, Plus, Search, StopCircle, Loader2,
-  Server, AlertTriangle, Bug, ChevronRight, Radio,
+  Server, AlertTriangle, Bug, ChevronRight, Radio, ShieldAlert, Lock,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,8 @@ import {
   startNetworkScan, cancelNetworkScan,
   type NetworkScanProfile,
 } from '@/lib/api-network'
+import { listenToNetworkHosts, type FirestoreNetworkHost } from '@/lib/firestore-network-assets'
+import { listenToNetworkFindings, type FirestoreNetworkFinding } from '@/lib/firestore-network-findings'
 
 // ── Status maps ───────────────────────────────────────────────────────
 
@@ -89,10 +91,12 @@ function NewNetworkScanModal({
         totalHosts: 0, liveHosts: 0, totalFindings: 0, totalCves: 0,
         createdAt: now,
         engines: {
-          host_discovery: { status: 'pending', count: 0 },
-          port_scan:      { status: 'pending', count: 0 },
-          cve_analysis:   { status: 'pending', count: 0 },
-          nuclei:         { status: 'pending', count: 0 },
+          host_discovery:    { status: 'pending', count: 0 },
+          port_scan:         { status: 'pending', count: 0 },
+          service_detection: { status: 'pending', count: 0 },
+          cve_analysis:      { status: 'pending', count: 0 },
+          network_checks:    { status: 'pending', count: 0 },
+          ssl_analysis:      { status: 'pending', count: 0 },
         },
       })
 
@@ -181,14 +185,19 @@ function NewNetworkScanModal({
 export default function NetworkSecurityPage() {
   const router      = useRouter()
   const { user }    = useAuth()
-  const [scans,     setScans]     = useState<FirestoreNetworkScan[]>([])
-  const [search,    setSearch]    = useState('')
+  const [scans,     setScans]    = useState<FirestoreNetworkScan[]>([])
+  const [hosts,     setHosts]    = useState<FirestoreNetworkHost[]>([])
+  const [findings,  setFindings] = useState<FirestoreNetworkFinding[]>([])
+  const [search,    setSearch]   = useState('')
   const [modalOpen, setModalOpen] = useState(false)
-  const [stopping,  setStopping]  = useState<string | null>(null)
+  const [stopping,  setStopping] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) return
-    return listenToNetworkScans(user.uid, setScans)
+    const unsubScans    = listenToNetworkScans(user.uid, setScans)
+    const unsubHosts    = listenToNetworkHosts(user.uid, setHosts)
+    const unsubFindings = listenToNetworkFindings(user.uid, setFindings)
+    return () => { unsubScans(); unsubHosts(); unsubFindings() }
   }, [user])
 
   async function handleStop(scanId: string) {
@@ -223,7 +232,13 @@ export default function NetworkSecurityPage() {
 
   const activeCount    = scans.filter((s) => NETWORK_ACTIVE_STATUSES.has(s.status)).length
   const completedCount = scans.filter((s) => s.status === 'completed' || s.status === 'completed_timeout').length
-  const totalFindings  = scans.reduce((n, s) => n + (s.totalFindings ?? 0), 0)
+  const totalCves      = scans.reduce((n, s) => n + (s.totalCves ?? 0), 0)
+  const criticalHosts  = hosts.filter((h) => (h.riskScore ?? 0) >= 71).length
+  const sslIssues      = findings.filter((f) => f.source === 'ssl-analysis').length
+  const criticalFinds  = findings.filter((f) => f.severity === 'critical').length
+  const avgRisk        = hosts.length
+    ? Math.round(hosts.reduce((n, h) => n + (h.riskScore ?? 0), 0) / hosts.length)
+    : 0
 
   return (
     <div className="p-8 space-y-6 max-w-5xl">
@@ -250,15 +265,23 @@ export default function NetworkSecurityPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'Active Scans',    value: activeCount,    cls: 'text-blue-400'   },
-          { label: 'Completed Scans', value: completedCount, cls: 'text-green-500'  },
-          { label: 'Total Findings',  value: totalFindings,  cls: 'text-orange-500' },
+          { label: 'Active Scans',     value: activeCount,               cls: 'text-blue-400',   Icon: Wifi         },
+          { label: 'Total Hosts',      value: hosts.length,              cls: 'text-foreground',  Icon: Server       },
+          { label: 'Critical Hosts',   value: criticalHosts,             cls: 'text-red-500',     Icon: ShieldAlert  },
+          { label: 'SSL Issues',       value: sslIssues,                 cls: 'text-orange-400',  Icon: Lock         },
+          { label: 'Critical Findings',value: criticalFinds,             cls: 'text-orange-500',  Icon: AlertTriangle},
+          { label: 'Avg Risk Score',   value: hosts.length ? `${avgRisk}/100` : '—',
+            cls: avgRisk >= 71 ? 'text-red-500' : avgRisk >= 41 ? 'text-orange-400' : avgRisk > 0 ? 'text-green-500' : 'text-muted-foreground',
+            Icon: Bug },
         ].map((s) => (
           <Card key={s.label} className="bg-card border-foreground/10">
-            <CardContent className="p-5">
-              <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <s.Icon className="w-3 h-3 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">{s.label}</p>
+              </div>
               <p className={`text-2xl font-bold ${s.cls}`}>{s.value}</p>
             </CardContent>
           </Card>

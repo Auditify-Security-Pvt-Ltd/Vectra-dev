@@ -21,7 +21,10 @@ export interface FirestoreNetworkFinding {
   host?: string | null
   matched_at?: string | null
   description?: string | null
+  recommendation?: string | null
   port?: number | null
+  protocol?: string | null
+  evidence?: string | null
   createdAt: string
 }
 

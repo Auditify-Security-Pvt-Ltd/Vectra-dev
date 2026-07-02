@@ -9,6 +9,11 @@ import type { FirestoreScan } from './firestore-scans'
 import type { FirestoreFinding } from './firestore-findings'
 import type { FirestoreCve } from './firestore-cves'
 import type { FirestoreAsset } from './firestore-assets'
+import type { FirestoreNetworkScan }     from './firestore-network-scans'
+import type { FirestoreNetworkHost }     from './firestore-network-assets'
+import type { FirestoreNetworkFinding }  from './firestore-network-findings'
+import type { FirestoreNetworkCve }      from './firestore-network-cves'
+import type { FirestoreNetworkTimeline } from './firestore-network-timeline'
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -585,7 +590,8 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
         ? doc.splitTextToSize(f.description, CW - 6).length
         : 0
       const remLines  = doc.splitTextToSize(`Remediation: ${getRemediation(f)}`, CW - 6).length
-      const blockH    = 12 + descLines * 4.5 + remLines * 4.2 + 8
+      const urlH      = (f.matchedAt ?? f.host) ? 6 : 0
+      const blockH    = 12 + urlH + descLines * 4.5 + remLines * 4.2 + 8
 
       if (y + blockH > PH - 18) {
         doc.addPage()
@@ -606,7 +612,7 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(8.5)
       doc.setTextColor(...textC)
-      doc.text(f.title, M + 7, y + 6)
+      doc.text(f.title.length > 62 ? f.title.slice(0, 60) + '…' : f.title, M + 7, y + 6)
 
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(7)
@@ -621,7 +627,7 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
         doc.setFont('helvetica', 'normal')
         doc.setFontSize(7.5)
         doc.setTextColor(80, 80, 80)
-        const urlLines = doc.splitTextToSize(`URL: ${affectedUrl}`, CW - 6)
+        const urlLines = doc.splitTextToSize(`URL: ${truncUrl(affectedUrl, 80)}`, CW - 6)
         doc.text(urlLines, M + 4, y)
         y += urlLines.length * 4 + 2
       }
@@ -934,6 +940,893 @@ export async function generateExcel(data: ReportData): Promise<Blob> {
   const ws5 = XLSX.utils.aoa_to_sheet([rHeaders, ...rRows])
   ws5['!cols'] = [{ wch: 10 }, { wch: 48 }, { wch: 12 }, { wch: 10 }, { wch: 50 }, { wch: 80 }]
   XLSX.utils.book_append_sheet(wb, ws5, 'Recommendations')
+
+  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+  return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+}
+
+// ── Network Security Report ────────────────────────────────────────────
+
+export interface NetworkReportData {
+  target: string
+  scan: FirestoreNetworkScan | null
+  hosts: FirestoreNetworkHost[]
+  findings: FirestoreNetworkFinding[]
+  cves: FirestoreNetworkCve[]
+  timeline: FirestoreNetworkTimeline | null
+  reportId: string
+  generatedBy: string
+}
+
+export interface NetworkReportTarget {
+  target: string
+  hostCount: number
+  findingsCount: number
+  cveCount: number
+  latestScan: FirestoreNetworkScan | null
+  latestScanDate: string
+  latestStatus: string
+}
+
+export async function getNetworkReportableTargets(uid: string): Promise<NetworkReportTarget[]> {
+  const scansSnap = await getDocs(collection(db, 'users', uid, 'network_scans'))
+  const allScans  = scansSnap.docs.map((d) => d.data() as FirestoreNetworkScan)
+
+  const byTarget = new Map<string, FirestoreNetworkScan[]>()
+  allScans.forEach((s) => {
+    if (!byTarget.has(s.target)) byTarget.set(s.target, [])
+    byTarget.get(s.target)!.push(s)
+  })
+
+  const result: NetworkReportTarget[] = []
+
+  for (const [target, scans] of byTarget) {
+    const sorted    = scans.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    const latestScan = sorted[0]
+    const hostCount     = latestScan.liveHosts   ?? latestScan.totalHosts   ?? 0
+    const findingsCount = latestScan.totalFindings ?? 0
+    const cveCount      = latestScan.totalCves     ?? 0
+    if (hostCount === 0 && findingsCount === 0 && cveCount === 0) continue
+    result.push({
+      target,
+      hostCount,
+      findingsCount,
+      cveCount,
+      latestScan,
+      latestScanDate: latestScan.completedAt ?? latestScan.createdAt,
+      latestStatus:   latestScan.status,
+    })
+  }
+
+  return result.sort((a, b) => b.findingsCount - a.findingsCount || b.cveCount - a.cveCount)
+}
+
+export async function fetchNetworkReportData(uid: string, target: string): Promise<{
+  hosts: FirestoreNetworkHost[]
+  findings: FirestoreNetworkFinding[]
+  cves: FirestoreNetworkCve[]
+  latestScan: FirestoreNetworkScan | null
+  timeline: FirestoreNetworkTimeline | null
+}> {
+  const scansSnap  = await getDocs(collection(db, 'users', uid, 'network_scans'))
+  const allScans   = scansSnap.docs.map((d) => d.data() as FirestoreNetworkScan)
+  const latestScan = allScans
+    .filter((s) => s.target === target)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null
+
+  if (!latestScan) return { hosts: [], findings: [], cves: [], latestScan: null, timeline: null }
+
+  const sid = latestScan.scanId
+  const [hostsSnap, findingsSnap, cvesSnap, tlSnap] = await Promise.all([
+    getDocs(query(collection(db, 'users', uid, 'network_assets'),   where('scanId', '==', sid))),
+    getDocs(query(collection(db, 'users', uid, 'network_findings'), where('scanId', '==', sid))),
+    getDocs(query(collection(db, 'users', uid, 'network_cves'),     where('scanId', '==', sid))),
+    getDocs(query(collection(db, 'users', uid, 'network_timeline'), where('target', '==', target))),
+  ])
+
+  const hosts = hostsSnap.docs
+    .map((d) => d.data() as FirestoreNetworkHost)
+    .sort((a, b) => (b.riskScore ?? 0) - (a.riskScore ?? 0))
+
+  const findings = findingsSnap.docs
+    .map((d) => d.data() as FirestoreNetworkFinding)
+    .sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
+
+  const cves = cvesSnap.docs
+    .map((d) => d.data() as FirestoreNetworkCve)
+    .sort((a, b) => b.cvssScore - a.cvssScore)
+
+  const timeline = tlSnap.docs.length > 0
+    ? tlSnap.docs
+        .map((d) => d.data() as FirestoreNetworkTimeline)
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0]
+    : null
+
+  return { hosts, findings, cves, latestScan, timeline }
+}
+
+export async function generateNetworkPdf(data: NetworkReportData): Promise<Blob> {
+  const { default: jsPDF }      = await import('jspdf')
+  const { default: autoTable }  = await import('jspdf-autotable')
+
+  const { target, scan, hosts, findings, cves, timeline, reportId, generatedBy } = data
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const PW  = 210
+  const PH  = 297
+  const M   = 14
+  const CW  = PW - 2 * M
+
+  const tblHead = { fillColor: [20, 20, 20] as [number, number, number], textColor: [255, 255, 255] as [number, number, number], fontStyle: 'bold' as const, fontSize: 8 }
+  const tblBody = { fontSize: 8, cellPadding: 2.8, overflow: 'linebreak' as const }
+
+  const FC = {
+    critical: findings.filter((f) => f.severity === 'critical').length,
+    high:     findings.filter((f) => f.severity === 'high').length,
+    medium:   findings.filter((f) => f.severity === 'medium').length,
+    low:      findings.filter((f) => f.severity === 'low').length,
+    info:     findings.filter((f) => f.severity === 'info').length,
+  }
+
+  const overallRisk =
+    FC.critical > 0 ? 'Critical' :
+    FC.high     > 0 ? 'High'     :
+    FC.medium   > 0 ? 'Medium'   :
+    FC.low      > 0 ? 'Low'      : 'Informational'
+
+  const riskRgb: [number, number, number] =
+    FC.critical > 0 ? [185, 28, 28]  :
+    FC.high     > 0 ? [154, 52, 18]  :
+    FC.medium   > 0 ? [133, 77, 14]  :
+    FC.low      > 0 ? [29, 78, 216]  : [75, 85, 99]
+
+  const scanDate = new Date(scan?.completedAt ?? scan?.createdAt ?? Date.now()).toLocaleDateString(
+    'en-US', { year: 'numeric', month: 'long', day: 'numeric' },
+  )
+
+  const liveHosts   = hosts.filter((h) => h.status === 'up').length
+  const totalPorts  = hosts.reduce((n, h) => n + h.ports.length, 0)
+  const sslFindings = findings.filter((f) => f.source === 'ssl-analysis')
+  const svcFindings = findings.filter((f) => f.source !== 'ssl-analysis')
+  const avgRisk     = hosts.length > 0
+    ? Math.round(hosts.reduce((n, h) => n + (h.riskScore ?? 0), 0) / hosts.length)
+    : 0
+
+  // ─── COVER PAGE ───────────────────────────────────────────────────
+
+  doc.setFillColor(12, 12, 12)
+  doc.rect(0, 0, PW, 75, 'F')
+  doc.setFillColor(124, 58, 237)
+  doc.rect(0, 75, PW, 2.5, 'F')
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(28)
+  doc.setTextColor(255, 255, 255)
+  doc.text('VECTRA', M, 30)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.setTextColor(160, 160, 160)
+  doc.text('SECURITY PLATFORM', M, 39)
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11.5)
+  doc.setTextColor(210, 210, 210)
+  doc.text('NETWORK SECURITY ASSESSMENT', PW - M, 55, { align: 'right' })
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(124, 58, 237)
+  doc.text('Network Infrastructure Security', PW - M, 64, { align: 'right' })
+
+  doc.setTextColor(100, 100, 100)
+  doc.setFontSize(7.5)
+  doc.setFont('helvetica', 'bold')
+  doc.text('ASSESSMENT TARGET', M, 92)
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.setTextColor(15, 15, 15)
+  const displayTarget = target.length > 50 ? target.slice(0, 48) + '…' : target
+  doc.text(displayTarget, M, 103)
+
+  doc.setDrawColor(220, 220, 220)
+  doc.setLineWidth(0.25)
+  doc.line(M, 108, PW - M, 108)
+
+  const BW  = (CW - 9) / 4
+  const BH  = 22
+  const BY1 = 114
+  const BY2 = 140
+
+  statBox(doc, M,              BY1, BW, BH, 'Total Hosts',      String(hosts.length),       [15, 15, 15])
+  statBox(doc, M + BW + 3,     BY1, BW, BH, 'Live Hosts',       String(liveHosts),          [22, 101, 52])
+  statBox(doc, M + (BW + 3)*2, BY1, BW, BH, 'Open Ports',       String(totalPorts),         [29, 78, 216])
+  statBox(doc, M + (BW + 3)*3, BY1, BW, BH, 'CVEs Found',       String(cves.length),        [124, 58, 237])
+  statBox(doc, M,              BY2, BW, BH, 'Critical Findings', String(FC.critical),        [185, 28, 28])
+  statBox(doc, M + BW + 3,     BY2, BW, BH, 'High Findings',    String(FC.high),            [154, 52, 18])
+  statBox(doc, M + (BW + 3)*2, BY2, BW, BH, 'SSL Issues',       String(sslFindings.length), [133, 77, 14])
+  statBox(doc, M + (BW + 3)*3, BY2, BW, BH, 'Avg Risk Score',   String(avgRisk),            [75, 85, 99])
+
+  let my = 172
+  const meta: [string, string][] = [
+    ['Assessment Date',   scanDate],
+    ['Scan Profile',      scan?.scanProfile ?? 'Network Scan'],
+    ['Generated By',      generatedBy],
+    ['Report ID',         reportId],
+    ['Classification',    'CONFIDENTIAL'],
+  ]
+  meta.forEach(([label, value], i) => {
+    const bg = i % 2 === 0 ? 250 : 255
+    doc.setFillColor(bg, bg, bg)
+    doc.rect(M, my - 5, CW, 9, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7.5)
+    doc.setTextColor(100, 100, 100)
+    doc.text(label, M + 3, my)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(20, 20, 20)
+    doc.text(value, M + 56, my)
+    my += 9
+  })
+
+  doc.setTextColor(190, 190, 190)
+  doc.setFontSize(6.5)
+  doc.text(
+    'This document contains confidential security assessment information. Unauthorized distribution is prohibited.',
+    PW / 2, PH - 10, { align: 'center' },
+  )
+
+  // ─── EXECUTIVE SUMMARY ────────────────────────────────────────────
+
+  doc.addPage()
+  let y = drawPageHeader(doc, target, PW, M)
+  y = drawSectionTitle(doc, 'Executive Summary', y, M, CW)
+
+  const intro =
+    `This network security assessment was conducted against ${target} on ${scanDate}. ` +
+    `The assessment discovered ${hosts.length} host${hosts.length !== 1 ? 's' : ''} (${liveHosts} live) ` +
+    `across ${totalPorts} open port${totalPorts !== 1 ? 's' : ''}. ` +
+    (findings.length > 0
+      ? `${findings.length} security finding${findings.length !== 1 ? 's' : ''} were identified across the network infrastructure. `
+      : '') +
+    (cves.length > 0
+      ? `CVE correlation identified ${cves.length} known vulnerabilit${cves.length !== 1 ? 'ies' : 'y'} in detected service versions. `
+      : '') +
+    `Findings are classified by severity and prioritized for remediation.`
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.setTextColor(40, 40, 40)
+  const introLines = doc.splitTextToSize(intro, CW)
+  doc.text(introLines, M, y)
+  y += introLines.length * 5.2 + 7
+
+  doc.setFillColor(...riskRgb)
+  doc.roundedRect(M, y, 70, 11, 2, 2, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8.5)
+  doc.setTextColor(255, 255, 255)
+  doc.text(`OVERALL RISK: ${overallRisk.toUpperCase()}`, M + 35, y + 7.5, { align: 'center' })
+  y += 19
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Severity', 'Count', '% of Total']],
+    body: [
+      ['Critical', FC.critical, findings.length ? `${Math.round((FC.critical / findings.length) * 100)}%` : '0%'],
+      ['High',     FC.high,     findings.length ? `${Math.round((FC.high     / findings.length) * 100)}%` : '0%'],
+      ['Medium',   FC.medium,   findings.length ? `${Math.round((FC.medium   / findings.length) * 100)}%` : '0%'],
+      ['Low',      FC.low,      findings.length ? `${Math.round((FC.low      / findings.length) * 100)}%` : '0%'],
+      ['Info',     FC.info,     findings.length ? `${Math.round((FC.info     / findings.length) * 100)}%` : '0%'],
+      ['Total',    findings.length, '100%'],
+    ],
+    headStyles: tblHead,
+    styles:     { ...tblBody, cellPadding: 3 },
+    columnStyles: { 0: { cellWidth: 45 }, 1: { cellWidth: 30 }, 2: { cellWidth: 'auto' } },
+    margin: { left: M, right: M },
+    showHead: 'everyPage',
+    didParseCell: (data: any) => {
+      if (data.section === 'body' && data.column.index === 0) {
+        const s = String(data.cell.raw).toLowerCase()
+        if (SEV_FILL[s]) {
+          data.cell.styles.fillColor = SEV_FILL[s]
+          data.cell.styles.textColor = SEV_TEXT[s]
+          data.cell.styles.fontStyle = (s === 'critical' || s === 'high') ? 'bold' : 'normal'
+        } else {
+          data.cell.styles.fillColor = [235, 235, 235]
+          data.cell.styles.fontStyle = 'bold'
+        }
+      }
+    },
+  })
+  y = (doc as any).lastAutoTable.finalY + 14
+
+  // ─── HOST DISCOVERY & RISK ASSESSMENT ────────────────────────────
+
+  if (hosts.length > 0) {
+    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
+    y = drawSectionTitle(doc, 'Host Discovery & Risk Assessment', y, M, CW)
+
+    autoTable(doc, {
+      startY: y,
+      head: [['IP Address', 'Hostname', 'Operating System', 'Risk', 'Level', 'Ports', 'Vendor']],
+      body: hosts.map((h) => [
+        h.ip,
+        h.hostname ?? '—',
+        h.os ? (h.os.length > 30 ? h.os.slice(0, 28) + '…' : h.os) : '—',
+        h.riskScore != null ? String(h.riskScore) : '—',
+        (h.riskLevel ?? '—').toUpperCase(),
+        String(h.ports.length),
+        h.vendor ? (h.vendor.length > 20 ? h.vendor.slice(0, 18) + '…' : h.vendor) : '—',
+      ]),
+      headStyles: tblHead,
+      styles:     tblBody,
+      columnStyles: {
+        0: { cellWidth: 28 },
+        1: { cellWidth: 34 },
+        2: { cellWidth: 38 },
+        3: { cellWidth: 12 },
+        4: { cellWidth: 20 },
+        5: { cellWidth: 12 },
+        6: { cellWidth: 'auto' },
+      },
+      margin: { left: M, right: M },
+      showHead: 'everyPage',
+      didParseCell: (data: any) => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const lvl = String(data.cell.raw).toLowerCase()
+          if (lvl === 'critical')      { data.cell.styles.textColor = [185, 28, 28];  data.cell.styles.fontStyle = 'bold' }
+          else if (lvl === 'high')     { data.cell.styles.textColor = [154, 52, 18];  data.cell.styles.fontStyle = 'bold' }
+          else if (lvl === 'medium')   { data.cell.styles.textColor = [133, 77, 14] }
+          else if (lvl === 'low')      { data.cell.styles.textColor = [29, 78, 216] }
+        }
+      },
+    })
+    y = (doc as any).lastAutoTable.finalY + 14
+  }
+
+  // ─── OPEN PORTS & SERVICES ────────────────────────────────────────
+
+  const allPorts = hosts.flatMap((h) => h.ports.map((p) => ({ ip: h.ip, ...p })))
+
+  if (allPorts.length > 0) {
+    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
+    y = drawSectionTitle(doc, 'Open Ports & Service Detection', y, M, CW)
+
+    autoTable(doc, {
+      startY: y,
+      head: [['IP Address', 'Port', 'Protocol', 'Service', 'Version', 'State']],
+      body: allPorts.slice(0, 200).map((p) => [
+        p.ip,
+        String(p.port),
+        p.protocol ?? '—',
+        p.service   ?? '—',
+        p.version   ? p.version.slice(0, 45) : '—',
+        p.state     ?? '—',
+      ]),
+      headStyles: tblHead,
+      styles:     tblBody,
+      columnStyles: {
+        0: { cellWidth: 28 },
+        1: { cellWidth: 12 },
+        2: { cellWidth: 18 },
+        3: { cellWidth: 26 },
+        4: { cellWidth: 62 },
+        5: { cellWidth: 'auto' },
+      },
+      margin: { left: M, right: M },
+      showHead: 'everyPage',
+      didParseCell: (data: any) => {
+        if (data.section === 'body' && data.column.index === 5) {
+          const v = String(data.cell.raw).toLowerCase()
+          if (v === 'open')        { data.cell.styles.textColor = [22, 101, 52];  data.cell.styles.fontStyle = 'bold' }
+          else if (v === 'closed') { data.cell.styles.textColor = [185, 28, 28];  data.cell.styles.fontStyle = 'bold' }
+          else                     { data.cell.styles.textColor = [107, 114, 128] }
+        }
+      },
+    })
+    y = (doc as any).lastAutoTable.finalY + 14
+  }
+
+  // ─── OS DETECTION ─────────────────────────────────────────────────
+
+  const hostsWithOs = hosts.filter((h) => h.os && h.os.toLowerCase() !== 'unknown')
+  if (hostsWithOs.length > 0) {
+    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
+    y = drawSectionTitle(doc, 'Operating System Detection', y, M, CW)
+
+    autoTable(doc, {
+      startY: y,
+      head: [['IP Address', 'Hostname', 'Normalized OS', 'OS Family', 'Confidence', 'Raw Detection']],
+      body: hostsWithOs.map((h) => [
+        h.ip,
+        h.hostname ?? '—',
+        h.os ?? '—',
+        (h.osFamily ?? '—').toUpperCase(),
+        h.osConfidence != null ? `${h.osConfidence}%` : '—',
+        h.osRaw ? h.osRaw.slice(0, 50) : '—',
+      ]),
+      headStyles: tblHead,
+      styles:     tblBody,
+      columnStyles: {
+        0: { cellWidth: 26 },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 40 },
+        3: { cellWidth: 22 },
+        4: { cellWidth: 20 },
+        5: { cellWidth: 'auto' },
+      },
+      margin: { left: M, right: M },
+      showHead: 'everyPage',
+    })
+    y = (doc as any).lastAutoTable.finalY + 14
+  }
+
+  // ─── SSL/TLS ANALYSIS ─────────────────────────────────────────────
+
+  const sslEndpoints = hosts.flatMap((h) => (h.ssl ?? []).map((s) => ({ ip: h.ip, ...s })))
+
+  if (sslEndpoints.length > 0 || sslFindings.length > 0) {
+    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
+    y = drawSectionTitle(doc, 'SSL/TLS Analysis', y, M, CW)
+
+    if (sslEndpoints.length > 0) {
+      autoTable(doc, {
+        startY: y,
+        head: [['IP Address', 'Port', 'TLS Version', 'Cipher Suite', 'Cert Subject', 'Days Expiry', 'Issues']],
+        body: sslEndpoints.map((s) => {
+          const issues = [
+            s.isExpired    ? 'Expired'     : null,
+            s.expiringSoon ? 'Expiring'    : null,
+            s.isSelfSigned ? 'Self-signed' : null,
+            s.isWeakTls    ? 'Weak TLS'   : null,
+            s.isWeakCipher ? 'Weak Cipher' : null,
+          ].filter(Boolean).join(', ')
+          return [
+            s.ip,
+            String(s.port),
+            s.tlsVersion,
+            s.cipherSuite ? s.cipherSuite.slice(0, 28) : '—',
+            s.subject     ? s.subject.slice(0, 32)     : '—',
+            s.daysUntilExpiry != null ? String(s.daysUntilExpiry) : '—',
+            issues || 'OK',
+          ]
+        }),
+        headStyles: tblHead,
+        styles:     tblBody,
+        columnStyles: {
+          0: { cellWidth: 26 },
+          1: { cellWidth: 11 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 38 },
+          4: { cellWidth: 34 },
+          5: { cellWidth: 18 },
+          6: { cellWidth: 'auto' },
+        },
+        margin: { left: M, right: M },
+        showHead: 'everyPage',
+        didParseCell: (data: any) => {
+          if (data.section === 'body' && data.column.index === 6) {
+            const v = String(data.cell.raw)
+            if (v === 'OK')                   { data.cell.styles.textColor = [22, 101, 52]; data.cell.styles.fontStyle = 'bold' }
+            else if (v.includes('Expired'))   { data.cell.styles.textColor = [185, 28, 28]; data.cell.styles.fontStyle = 'bold' }
+            else                              { data.cell.styles.textColor = [154, 52, 18] }
+          }
+        },
+      })
+      y = (doc as any).lastAutoTable.finalY + 14
+    }
+  }
+
+  // ─── DANGEROUS SERVICES ───────────────────────────────────────────
+
+  if (svcFindings.length > 0) {
+    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
+    y = drawSectionTitle(doc, 'Dangerous Services', y, M, CW)
+
+    autoTable(doc, {
+      startY: y,
+      head: [['IP Address', 'Port', 'Severity', 'Service / Finding', 'Recommendation']],
+      body: svcFindings.slice(0, 60).map((f) => [
+        f.ip,
+        f.port != null ? String(f.port) : '—',
+        f.severity.toUpperCase(),
+        f.title.length > 45 ? f.title.slice(0, 43) + '…' : f.title,
+        f.recommendation ? f.recommendation.slice(0, 75) : '—',
+      ]),
+      headStyles: tblHead,
+      styles:     tblBody,
+      columnStyles: {
+        0: { cellWidth: 26 },
+        1: { cellWidth: 11 },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 42 },
+        4: { cellWidth: 'auto' },
+      },
+      margin: { left: M, right: M },
+      showHead: 'everyPage',
+      didParseCell: (data: any) => {
+        if (data.section === 'body' && data.column.index === 2) {
+          const s = String(data.cell.raw).toLowerCase()
+          if (SEV_FILL[s]) {
+            data.cell.styles.fillColor = SEV_FILL[s]
+            data.cell.styles.textColor = SEV_TEXT[s]
+            data.cell.styles.fontStyle = 'bold'
+          }
+        }
+      },
+    })
+    y = (doc as any).lastAutoTable.finalY + 14
+  }
+
+  // ─── CVE CORRELATION ──────────────────────────────────────────────
+
+  if (cves.length > 0) {
+    doc.addPage()
+    y = drawPageHeader(doc, target, PW, M)
+    y = drawSectionTitle(doc, 'CVE Correlation', y, M, CW)
+
+    autoTable(doc, {
+      startY: y,
+      head: [['CVE ID', 'IP Address', 'Technology', 'Version', 'CVSS', 'Severity', 'Exploit']],
+      body: cves.map((c) => [
+        c.cveId,
+        c.ip,
+        c.technology,
+        c.version,
+        c.cvssScore.toFixed(1),
+        (c.severity ?? '').toUpperCase(),
+        c.exploitAvailable ? 'YES' : 'No',
+      ]),
+      headStyles: tblHead,
+      styles:     tblBody,
+      columnStyles: {
+        0: { cellWidth: 34 },
+        1: { cellWidth: 26 },
+        2: { cellWidth: 28 },
+        3: { cellWidth: 20 },
+        4: { cellWidth: 14 },
+        5: { cellWidth: 24 },
+        6: { cellWidth: 'auto' },
+      },
+      margin: { left: M, right: M },
+      showHead: 'everyPage',
+      didParseCell: (data: any) => {
+        if (data.section === 'body') {
+          if (data.column.index === 5) {
+            const s = String(data.cell.raw).toLowerCase()
+            if (SEV_FILL[s]) {
+              data.cell.styles.fillColor = SEV_FILL[s]
+              data.cell.styles.textColor = SEV_TEXT[s]
+              data.cell.styles.fontStyle = 'bold'
+            }
+          }
+          if (data.column.index === 6 && String(data.cell.raw) === 'YES') {
+            data.cell.styles.textColor = [185, 28, 28]
+            data.cell.styles.fontStyle = 'bold'
+          }
+          if (data.column.index === 0) {
+            data.cell.styles.textColor = [109, 40, 217]
+            data.cell.styles.fontStyle = 'bold'
+          }
+        }
+      },
+    })
+    y = (doc as any).lastAutoTable.finalY + 14
+
+    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
+    y = drawSectionTitle(doc, 'CVE Details', y, M, CW)
+
+    for (const c of cves.slice(0, 20)) {
+      const descLines = c.description ? doc.splitTextToSize(c.description, CW - 6).length : 0
+      if (y + 10 + descLines * 4.5 > PH - 18) {
+        doc.addPage()
+        y = drawPageHeader(doc, target, PW, M)
+        y += 4
+      }
+
+      doc.setFillColor(245, 245, 255)
+      doc.rect(M, y, CW, 8, 'F')
+      doc.setFillColor(109, 40, 217)
+      doc.rect(M, y, 3, 8, 'F')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8.5)
+      doc.setTextColor(109, 40, 217)
+      doc.text(c.cveId, M + 7, y + 5.5)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(7.5)
+      doc.setTextColor(80, 80, 80)
+      doc.text(
+        `${c.ip}  ·  ${c.technology} ${c.version}  ·  CVSS ${c.cvssScore.toFixed(1)}  ·  ${c.exploitAvailable ? 'EXPLOIT AVAILABLE' : 'No known exploit'}`,
+        PW - M, y + 5.5, { align: 'right' },
+      )
+      y += 10
+
+      if (c.description) {
+        const dl = doc.splitTextToSize(c.description, CW - 6)
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        doc.setTextColor(50, 50, 50)
+        doc.text(dl, M + 4, y)
+        y += dl.length * 4.5 + 7
+      } else {
+        y += 5
+      }
+
+      doc.setDrawColor(225, 225, 225)
+      doc.setLineWidth(0.15)
+      doc.line(M, y - 4, PW - M, y - 4)
+    }
+  }
+
+  // ─── NETWORK TIMELINE ─────────────────────────────────────────────
+
+  if (timeline && timeline.changes.length > 0) {
+    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
+    y = drawSectionTitle(doc, 'Network Timeline', y, M, CW)
+
+    const tlDate = new Date(timeline.timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    const tlText =
+      `Timeline event recorded on ${tlDate}. ` +
+      `${timeline.changeCount} change${timeline.changeCount !== 1 ? 's' : ''} detected: ` +
+      `${timeline.newHosts} new host${timeline.newHosts !== 1 ? 's' : ''}, ` +
+      `${timeline.removedHosts} removed, ` +
+      `${timeline.portChanges} port change${timeline.portChanges !== 1 ? 's' : ''}, ` +
+      `${timeline.riskChanges} risk change${timeline.riskChanges !== 1 ? 's' : ''}.`
+    const tlLines = doc.splitTextToSize(tlText, CW)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(40, 40, 40)
+    doc.text(tlLines, M, y)
+    y += tlLines.length * 5.2 + 8
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Event Type', 'Host', 'Details', 'Severity']],
+      body: timeline.changes.slice(0, 30).map((c) => [
+        c.type.replace(/_/g, ' ').toUpperCase(),
+        c.host,
+        c.details,
+        c.severity.toUpperCase(),
+      ]),
+      headStyles: tblHead,
+      styles:     tblBody,
+      columnStyles: {
+        0: { cellWidth: 32 },
+        1: { cellWidth: 26 },
+        2: { cellWidth: 'auto' },
+        3: { cellWidth: 20 },
+      },
+      margin: { left: M, right: M },
+      showHead: 'everyPage',
+      didParseCell: (data: any) => {
+        if (data.section === 'body' && data.column.index === 3) {
+          const v = String(data.cell.raw).toLowerCase()
+          if (v === 'critical')    { data.cell.styles.textColor = [185, 28, 28]; data.cell.styles.fontStyle = 'bold' }
+          else if (v === 'warning'){ data.cell.styles.textColor = [154, 52, 18] }
+        }
+      },
+    })
+    y = (doc as any).lastAutoTable.finalY + 14
+  }
+
+  // ─── RECOMMENDATIONS ──────────────────────────────────────────────
+
+  if (findings.length > 0) {
+    doc.addPage()
+    y = drawPageHeader(doc, target, PW, M)
+    y = drawSectionTitle(doc, 'Remediation Recommendations', y, M, CW)
+
+    const sortedF = [...findings].sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
+
+    sortedF.slice(0, 30).forEach((f, i) => {
+      const rem    = f.recommendation ?? `Review and remediate the "${f.title}" finding per your security policy.`
+      const rl     = doc.splitTextToSize(rem, CW - 24).length
+      const blockH = 9 + rl * 4.5 + 6
+
+      if (y + blockH > PH - 18) {
+        doc.addPage()
+        y = drawPageHeader(doc, target, PW, M)
+        y += 4
+      }
+
+      const sev   = f.severity.toLowerCase()
+      const textC = SEV_TEXT[sev] ?? [75, 85, 99]
+
+      doc.setFillColor(...(SEV_FILL[sev] ?? [243, 244, 246]))
+      doc.roundedRect(M, y, 19, 6.5, 1, 1, 'F')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(6.5)
+      doc.setTextColor(...textC)
+      doc.text(sev.toUpperCase(), M + 9.5, y + 4.5, { align: 'center' })
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8.5)
+      doc.setTextColor(15, 15, 15)
+      doc.text(`${i + 1}. ${f.title.length > 70 ? f.title.slice(0, 68) + '…' : f.title}`, M + 23, y + 4.5)
+      y += 9
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8)
+      doc.setTextColor(55, 55, 55)
+      const remLines = doc.splitTextToSize(rem, CW - 24)
+      doc.text(remLines, M + 23, y)
+      y += remLines.length * 4.5 + 6
+    })
+  }
+
+  // ─── TECHNICAL APPENDIX ───────────────────────────────────────────
+
+  doc.addPage()
+  y = drawPageHeader(doc, target, PW, M)
+  y = drawSectionTitle(doc, 'Technical Appendix', y, M, CW)
+
+  if (scan?.engines) {
+    const engineRows = Object.entries(scan.engines).map(([engine, state]: [string, any]) => [
+      engine.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+      (state?.status ?? '—').toUpperCase(),
+      String(state?.count ?? 0),
+    ])
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Scan Engine', 'Status', 'Items Found']],
+      body: engineRows,
+      headStyles: tblHead,
+      styles:     { ...tblBody, cellPadding: 3 },
+      columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 35 }, 2: { cellWidth: 'auto' } },
+      margin: { left: M, right: M },
+      showHead: 'everyPage',
+      didParseCell: (data: any) => {
+        if (data.section === 'body' && data.column.index === 1) {
+          const v = String(data.cell.raw).toLowerCase()
+          if (v === 'completed')     { data.cell.styles.textColor = [22, 101, 52];  data.cell.styles.fontStyle = 'bold' }
+          else if (v === 'failed')   { data.cell.styles.textColor = [185, 28, 28];  data.cell.styles.fontStyle = 'bold' }
+          else if (v === 'running')  { data.cell.styles.textColor = [29, 78, 216] }
+        }
+      },
+    })
+    y = (doc as any).lastAutoTable.finalY + 14
+  }
+
+  if (hosts.length > 0) {
+    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
+    y = drawSectionTitle(doc, 'Risk Score Distribution', y, M, CW)
+
+    const rl = (level: string) => hosts.filter((h) => h.riskLevel === level).length
+    autoTable(doc, {
+      startY: y,
+      head: [['Risk Level', 'Host Count', '% of Hosts', 'Score Range']],
+      body: [
+        ['Critical', rl('critical'), `${Math.round(rl('critical') / hosts.length * 100)}%`, '71–100'],
+        ['High',     rl('high'),     `${Math.round(rl('high')     / hosts.length * 100)}%`, '41–70'],
+        ['Medium',   rl('medium'),   `${Math.round(rl('medium')   / hosts.length * 100)}%`, '21–40'],
+        ['Low',      rl('low'),      `${Math.round(rl('low')      / hosts.length * 100)}%`, '0–20'],
+      ],
+      headStyles: tblHead,
+      styles:     { ...tblBody, cellPadding: 3 },
+      columnStyles: { 0: { cellWidth: 35 }, 1: { cellWidth: 30 }, 2: { cellWidth: 30 }, 3: { cellWidth: 'auto' } },
+      margin: { left: M, right: M },
+      showHead: 'everyPage',
+    })
+  }
+
+  // ─── PAGE NUMBERS (skip cover) ────────────────────────────────────
+
+  const total = (doc.internal as any).getNumberOfPages()
+  for (let p = 2; p <= total; p++) {
+    doc.setPage(p)
+    doc.setDrawColor(210, 210, 210)
+    doc.setLineWidth(0.2)
+    doc.line(M, PH - 11, PW - M, PH - 11)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6.5)
+    doc.setTextColor(150, 150, 150)
+    doc.text(`Report ID: ${reportId}`, M, PH - 6)
+    doc.text(`Page ${p - 1} of ${total - 1}`, PW - M, PH - 6, { align: 'right' })
+    doc.text('CONFIDENTIAL', PW / 2, PH - 6, { align: 'center' })
+  }
+
+  return doc.output('blob') as unknown as Blob
+}
+
+export async function generateNetworkExcel(data: NetworkReportData): Promise<Blob> {
+  const XLSX = await import('xlsx')
+
+  const { target, scan, hosts, findings, cves, reportId, generatedBy } = data
+
+  const FC = {
+    critical: findings.filter((f) => f.severity === 'critical').length,
+    high:     findings.filter((f) => f.severity === 'high').length,
+    medium:   findings.filter((f) => f.severity === 'medium').length,
+    low:      findings.filter((f) => f.severity === 'low').length,
+    info:     findings.filter((f) => f.severity === 'info').length,
+  }
+
+  const liveHosts  = hosts.filter((h) => h.status === 'up').length
+  const totalPorts = hosts.reduce((n, h) => n + h.ports.length, 0)
+  const avgRisk    = hosts.length > 0
+    ? Math.round(hosts.reduce((n, h) => n + (h.riskScore ?? 0), 0) / hosts.length)
+    : 0
+
+  const wb = XLSX.utils.book_new()
+
+  // Sheet 1: Executive Summary
+  const ws1 = XLSX.utils.aoa_to_sheet([
+    ['VECTRA NETWORK SECURITY ASSESSMENT REPORT'],
+    [],
+    ['Target',          target],
+    ['Assessment Date', new Date(scan?.completedAt ?? scan?.createdAt ?? Date.now()).toLocaleDateString()],
+    ['Scan Profile',    scan?.scanProfile ?? 'Network Scan'],
+    ['Report ID',       reportId],
+    ['Generated By',    generatedBy],
+    ['Generated At',    new Date().toLocaleString()],
+    [],
+    ['NETWORK SUMMARY'],
+    ['Total Hosts',    hosts.length],
+    ['Live Hosts',     liveHosts],
+    ['Open Ports',     totalPorts],
+    ['CVEs Found',     cves.length],
+    ['Avg Risk Score', avgRisk],
+    [],
+    ['FINDINGS SUMMARY'],
+    ['Severity', 'Count', 'Percentage'],
+    ['Critical', FC.critical, findings.length ? `${Math.round((FC.critical / findings.length) * 100)}%` : '0%'],
+    ['High',     FC.high,     findings.length ? `${Math.round((FC.high     / findings.length) * 100)}%` : '0%'],
+    ['Medium',   FC.medium,   findings.length ? `${Math.round((FC.medium   / findings.length) * 100)}%` : '0%'],
+    ['Low',      FC.low,      findings.length ? `${Math.round((FC.low      / findings.length) * 100)}%` : '0%'],
+    ['Info',     FC.info,     findings.length ? `${Math.round((FC.info     / findings.length) * 100)}%` : '0%'],
+    ['Total',    findings.length, '100%'],
+  ])
+  ws1['!cols'] = [{ wch: 24 }, { wch: 32 }, { wch: 16 }]
+  XLSX.utils.book_append_sheet(wb, ws1, 'Executive Summary')
+
+  // Sheet 2: Hosts
+  const hHeaders = ['IP Address', 'Hostname', 'OS (Normalized)', 'OS Family', 'OS Confidence', 'Risk Score', 'Risk Level', 'Open Ports', 'MAC', 'Vendor', 'Status']
+  const hRows = hosts.map((h) => [
+    h.ip, h.hostname ?? '', h.os ?? '', h.osFamily ?? '',
+    h.osConfidence != null ? `${h.osConfidence}%` : '',
+    h.riskScore ?? '', h.riskLevel ?? '', h.ports.length,
+    h.mac ?? '', h.vendor ?? '', h.status,
+  ])
+  const ws2 = XLSX.utils.aoa_to_sheet([hHeaders, ...hRows])
+  ws2['!cols'] = [{ wch: 18 }, { wch: 28 }, { wch: 30 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 20 }, { wch: 10 }]
+  XLSX.utils.book_append_sheet(wb, ws2, 'Hosts')
+
+  // Sheet 3: Open Ports & Services
+  const allPorts = hosts.flatMap((h) => h.ports.map((p) => ({ ip: h.ip, hostname: h.hostname ?? '', ...p })))
+  const ws3 = XLSX.utils.aoa_to_sheet([
+    ['IP Address', 'Hostname', 'Port', 'Protocol', 'Service', 'Version', 'State'],
+    ...allPorts.map((p) => [p.ip, p.hostname, p.port, p.protocol, p.service, p.version, p.state]),
+  ])
+  ws3['!cols'] = [{ wch: 18 }, { wch: 28 }, { wch: 10 }, { wch: 12 }, { wch: 20 }, { wch: 42 }, { wch: 10 }]
+  XLSX.utils.book_append_sheet(wb, ws3, 'Open Ports & Services')
+
+  // Sheet 4: Findings
+  const sortedF = [...findings].sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
+  const ws4 = XLSX.utils.aoa_to_sheet([
+    ['#', 'IP', 'Port', 'Severity', 'Source', 'Finding', 'Description', 'Recommendation', 'Detected At'],
+    ...sortedF.map((f, i) => [
+      i + 1, f.ip, f.port ?? '', f.severity.toUpperCase(), f.source, f.title,
+      f.description ?? '', f.recommendation ?? '', new Date(f.createdAt).toLocaleString(),
+    ]),
+  ])
+  ws4['!cols'] = [{ wch: 4 }, { wch: 18 }, { wch: 8 }, { wch: 12 }, { wch: 16 }, { wch: 48 }, { wch: 60 }, { wch: 60 }, { wch: 20 }]
+  XLSX.utils.book_append_sheet(wb, ws4, 'Findings')
+
+  // Sheet 5: CVE Intelligence
+  const ws5 = XLSX.utils.aoa_to_sheet([
+    ['CVE ID', 'IP Address', 'Technology', 'Version', 'CVSS Score', 'Severity', 'Exploit Available', 'Published', 'Description'],
+    ...cves.map((c) => [
+      c.cveId, c.ip, c.technology, c.version, c.cvssScore,
+      c.severity, c.exploitAvailable ? 'Yes' : 'No',
+      c.published ? new Date(c.published).toLocaleDateString() : '',
+      c.description,
+    ]),
+  ])
+  ws5['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 14 }, { wch: 60 }]
+  XLSX.utils.book_append_sheet(wb, ws5, 'CVE Intelligence')
 
   const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })

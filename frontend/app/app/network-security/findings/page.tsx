@@ -66,6 +66,18 @@ function FindingRow({ finding }: { finding: FirestoreNetworkFinding }) {
               <p className="text-xs text-foreground leading-relaxed">{finding.description}</p>
             </div>
           )}
+          {finding.recommendation && (
+            <div className="p-3 rounded-lg bg-primary/5 border border-primary/15">
+              <p className="text-[11px] text-primary/70 mb-0.5 font-semibold uppercase tracking-wider">Recommendation</p>
+              <p className="text-xs text-foreground leading-relaxed">{finding.recommendation}</p>
+            </div>
+          )}
+          {finding.evidence && (
+            <div className="p-3 rounded-lg bg-foreground/3 border border-foreground/8">
+              <p className="text-[11px] text-muted-foreground mb-0.5">Evidence</p>
+              <p className="text-xs font-mono text-foreground">{finding.evidence}</p>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -104,7 +116,7 @@ export default function NetworkFindingsPage() {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-foreground">Network Findings</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Vulnerabilities discovered via Nuclei across all network scans</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Security issues discovered via port &amp; service analysis across all network scans</p>
         </div>
       </div>
 

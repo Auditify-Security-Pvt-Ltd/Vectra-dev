@@ -7,7 +7,7 @@ import {
   BarChart3, Network, Target, Zap, AlertTriangle, ShieldAlert,
   Cloud, FileText, Sparkles, Users, LogOut, Settings,
   ChevronDown, ChevronRight,
-  Globe, Wifi, Server, Shield, Lock,
+  Globe, Wifi, Server, Shield, Lock, Clock, Activity,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -59,8 +59,10 @@ const MODULES: NavModule[] = [
     icon: Wifi,
     href: '/app/network-security',
     items: [
-      { icon: Zap,    label: 'Scans', href: '/app/network-security'       },
-      { icon: Server, label: 'Hosts', href: '/app/network-security/hosts' },
+      { icon: Zap,      label: 'Scans',     href: '/app/network-security'            },
+      { icon: Server,   label: 'Hosts',     href: '/app/network-security/hosts'      },
+      { icon: Activity, label: 'Timeline',  href: '/app/network-security/timeline'   },
+      { icon: Clock,    label: 'Schedules', href: '/app/network-security/schedules'  },
     ],
   },
   {

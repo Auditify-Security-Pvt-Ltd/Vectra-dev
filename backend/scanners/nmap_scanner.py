@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 import shutil
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from utils.logger import get_logger
 
@@ -23,15 +23,19 @@ _HOST_RE    = re.compile(r"^Host:\s+(\S+)\s+\(([^)]*)\)\s+Status:\s+(\w+)", re.M
 _PORTS_LINE = re.compile(r"^Host:\s+(\S+)[^\t]*\tPorts:\s+([^\t\n]+)", re.MULTILINE)
 _PORT_ENTRY = re.compile(r"(\d+)/open/(\w+)//([^/]*)//([^/]*)/")
 
+# Extracted from the same host line that contains Ports:
+_OS_RE  = re.compile(r"\tOS:\s+([^\t\n]+)")
+_MAC_RE = re.compile(r"\tMAC Address:\s+([0-9A-Fa-f:]{17})\s+\(([^)]*)\)")
+
 
 def _parse_hosts(output: str) -> List[Dict[str, Any]]:
     hosts = []
     for m in _HOST_RE.finditer(output):
-        ip, hostname, status = m.group(1), m.group(2).strip(), m.group(3)
+        ip, hostname, state = m.group(1), m.group(2).strip(), m.group(3)
         hosts.append({
             "ip":       ip,
             "hostname": hostname or None,
-            "status":   "up" if status.lower() == "up" else "down",
+            "status":   "up" if state.lower() == "up" else "down",
         })
     return hosts
 
@@ -51,6 +55,35 @@ def _parse_ports(output: str) -> Dict[str, List[Dict[str, Any]]]:
                 "state":    "open",
             })
     return result
+
+
+def _parse_os_mac(output: str, ip: str) -> Tuple[str, str, str]:
+    """
+    Extract (os_string, mac_address, vendor) for a given IP from grepable nmap output.
+    OS and MAC appear as tab-separated fields on the same line as Ports.
+    Returns ("", "", "") if not found.
+    """
+    for line in output.splitlines():
+        if not line.startswith(f"Host: {ip}"):
+            continue
+        os_str = ""
+        mac    = ""
+        vendor = ""
+
+        m_os = _OS_RE.search(line)
+        if m_os:
+            # Strip confidence percentages: "Linux 4.15 - 5.6 (97%)" → "Linux 4.15 - 5.6"
+            os_str = re.sub(r"\s*\(\d+%\)", "", m_os.group(1)).strip()
+
+        m_mac = _MAC_RE.search(line)
+        if m_mac:
+            mac    = m_mac.group(1).upper()
+            vendor = m_mac.group(2).strip()
+
+        if os_str or mac:
+            return os_str, mac, vendor
+
+    return "", "", ""
 
 
 # ── Low-level runner ──────────────────────────────────────────────────
@@ -84,16 +117,21 @@ async def discover_live_hosts(target: str) -> List[Dict[str, Any]]:
 async def scan_ports_and_services(
     ip: str,
     full_scan: bool = False,
-) -> List[Dict[str, Any]]:
-    """Port + service version scan for a single host."""
+) -> Dict[str, Any]:
+    """
+    Port + service version + OS detection scan for a single host.
+    Returns {"ports": [...], "os": str, "mac": str, "vendor": str}.
+    OS detection (-O) requires root; if unavailable nmap omits it silently.
+    """
     port_arg = "-p-" if full_scan else "--top-ports=1000"
     output = await _nmap(
-        "-Pn", "-sV", "--open",
+        "-Pn", "-sV", "-O", "--open",
         port_arg, "--version-intensity=5",
         ip, "-oG", "-",
     )
-    by_ip = _parse_ports(output)
-    return by_ip.get(ip, [])
+    ports          = _parse_ports(output).get(ip, [])
+    os_str, mac, vendor = _parse_os_mac(output, ip)
+    return {"ports": ports, "os": os_str, "mac": mac, "vendor": vendor}
 
 
 def extract_technologies(ports: List[Dict[str, Any]]) -> List[str]:
@@ -134,22 +172,39 @@ _MOCK_HOSTS = [
     {"ip": "192.168.1.20",  "hostname": "dev.local",      "status": "up"},
 ]
 
-_MOCK_PORTS: Dict[str, List[Dict[str, Any]]] = {
-    "192.168.1.1": [
-        {"port": 22,  "protocol": "tcp", "service": "ssh",   "version": "OpenSSH 8.4p1", "state": "open"},
-        {"port": 80,  "protocol": "tcp", "service": "http",  "version": "nginx 1.18.0",   "state": "open"},
-        {"port": 443, "protocol": "tcp", "service": "https", "version": "nginx 1.18.0",   "state": "open"},
-    ],
-    "192.168.1.5": [
-        {"port": 22,   "protocol": "tcp", "service": "ssh",   "version": "OpenSSH 7.9",        "state": "open"},
-        {"port": 3306, "protocol": "tcp", "service": "mysql", "version": "MySQL 5.7.32",        "state": "open"},
-        {"port": 8080, "protocol": "tcp", "service": "http",  "version": "Apache Tomcat 9.0.4", "state": "open"},
-    ],
-    "192.168.1.20": [
-        {"port": 22,  "protocol": "tcp", "service": "ssh",   "version": "OpenSSH 8.9",       "state": "open"},
-        {"port": 80,  "protocol": "tcp", "service": "http",  "version": "Apache httpd 2.4.50","state": "open"},
-        {"port": 6379,"protocol": "tcp", "service": "redis", "version": "Redis 6.2.6",        "state": "open"},
-    ],
+_MOCK_SCAN_RESULTS: Dict[str, Dict[str, Any]] = {
+    "192.168.1.1": {
+        "ports": [
+            {"port": 22,  "protocol": "tcp", "service": "ssh",   "version": "OpenSSH 8.4p1", "state": "open"},
+            {"port": 80,  "protocol": "tcp", "service": "http",  "version": "nginx 1.18.0",   "state": "open"},
+            {"port": 443, "protocol": "tcp", "service": "https", "version": "nginx 1.18.0",   "state": "open"},
+        ],
+        "os":     "Linux 4.15 - 5.6",
+        "mac":    "00:50:56:00:00:01",
+        "vendor": "VMware",
+    },
+    "192.168.1.5": {
+        "ports": [
+            {"port": 22,   "protocol": "tcp", "service": "ssh",   "version": "OpenSSH 7.9",         "state": "open"},
+            {"port": 23,   "protocol": "tcp", "service": "telnet","version": "",                     "state": "open"},
+            {"port": 3306, "protocol": "tcp", "service": "mysql", "version": "MySQL 5.7.32",         "state": "open"},
+            {"port": 8080, "protocol": "tcp", "service": "http",  "version": "Apache Tomcat 9.0.4",  "state": "open"},
+        ],
+        "os":     "Linux 3.x|4.x",
+        "mac":    "00:0C:29:AB:CD:EF",
+        "vendor": "VMware",
+    },
+    "192.168.1.20": {
+        "ports": [
+            {"port": 22,   "protocol": "tcp", "service": "ssh",   "version": "OpenSSH 8.9",        "state": "open"},
+            {"port": 80,   "protocol": "tcp", "service": "http",  "version": "Apache httpd 2.4.50","state": "open"},
+            {"port": 3389, "protocol": "tcp", "service": "ms-wbt-server", "version": "",            "state": "open"},
+            {"port": 6379, "protocol": "tcp", "service": "redis", "version": "Redis 6.2.6",         "state": "open"},
+        ],
+        "os":     "Windows Server 2019",
+        "mac":    "00:0C:29:12:34:56",
+        "vendor": "VMware",
+    },
 }
 
 
@@ -158,5 +213,6 @@ def get_mock_hosts_for_target(target: str) -> List[Dict[str, Any]]:
     return _MOCK_HOSTS[:]
 
 
-def get_mock_ports_for_ip(ip: str) -> List[Dict[str, Any]]:
-    return _MOCK_PORTS.get(ip, _MOCK_PORTS.get("192.168.1.1", []))
+def get_mock_scan_result_for_ip(ip: str) -> Dict[str, Any]:
+    """Return mock scan result (ports + OS + MAC) for a given IP."""
+    return _MOCK_SCAN_RESULTS.get(ip, _MOCK_SCAN_RESULTS["192.168.1.1"])

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Server, Search, Wifi, Globe, ChevronDown, ChevronRight } from 'lucide-react'
+import { Server, Search, Wifi, Globe, ChevronDown, ChevronRight, ShieldAlert } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuth } from '@/context/auth-context'
@@ -42,11 +42,29 @@ function HostRow({ host }: { host: FirestoreNetworkHost }) {
                 Web Service
               </span>
             )}
+            {host.os && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-foreground/8 text-muted-foreground border border-foreground/10">
+                {host.os}{host.osConfidence ? ` ${host.osConfidence}%` : ''}
+              </span>
+            )}
+            {host.riskScore != null && (
+              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
+                host.riskLevel === 'critical' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                host.riskLevel === 'high'     ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' :
+                host.riskLevel === 'medium'   ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
+                'bg-green-500/10 text-green-500 border-green-500/20'
+              }`}>
+                <ShieldAlert className="w-2.5 h-2.5 inline mr-0.5" />
+                {host.riskScore}/100
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3 mt-1">
             <span className="text-xs text-muted-foreground">{host.ports.length} open ports</span>
             <span className="text-xs text-muted-foreground">{formatDate(host.createdAt)}</span>
-            {host.technologies.length > 0 && (
+            {host.mac && <span className="text-xs font-mono text-muted-foreground">{host.mac}</span>}
+            {host.vendor && <span className="text-xs text-muted-foreground">({host.vendor})</span>}
+            {!host.mac && host.technologies.length > 0 && (
               <span className="text-xs text-muted-foreground">{host.technologies.slice(0, 3).join(', ')}</span>
             )}
           </div>
@@ -119,8 +137,12 @@ export default function NetworkHostsPage() {
     h.technologies.some((t) => t.toLowerCase().includes(search.toLowerCase())),
   )
 
-  const webHosts = hosts.filter((h) => h.isWebService).length
-  const totalPorts = hosts.reduce((n, h) => n + h.ports.length, 0)
+  const webHosts      = hosts.filter((h) => h.isWebService).length
+  const criticalHosts = hosts.filter((h) => (h.riskScore ?? 0) >= 71).length
+  const totalPorts    = hosts.reduce((n, h) => n + h.ports.length, 0)
+  const avgRisk       = hosts.length
+    ? Math.round(hosts.reduce((n, h) => n + (h.riskScore ?? 0), 0) / hosts.length)
+    : 0
 
   return (
     <div className="p-8 space-y-6 max-w-5xl">
@@ -135,11 +157,12 @@ export default function NetworkHostsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         {[
-          { label: 'Total Hosts',  value: hosts.length, cls: 'text-foreground' },
-          { label: 'Web Services', value: webHosts,     cls: 'text-blue-400'  },
-          { label: 'Open Ports',   value: totalPorts,   cls: 'text-violet-400' },
+          { label: 'Total Hosts',     value: hosts.length,   cls: 'text-foreground'  },
+          { label: 'Critical Risk',   value: criticalHosts,  cls: 'text-red-500'     },
+          { label: 'Open Ports',      value: totalPorts,     cls: 'text-violet-400'  },
+          { label: 'Avg Risk Score',  value: `${avgRisk}/100`, cls: avgRisk >= 71 ? 'text-red-500' : avgRisk >= 41 ? 'text-orange-400' : 'text-green-500' },
         ].map((s) => (
           <Card key={s.label} className="bg-card border-foreground/10">
             <CardContent className="p-5">

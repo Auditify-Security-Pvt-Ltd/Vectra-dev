@@ -20,8 +20,14 @@ import {
   fetchReportDataByTarget,
   generatePdf,
   generateExcel,
+  getNetworkReportableTargets,
+  fetchNetworkReportData,
+  generateNetworkPdf,
+  generateNetworkExcel,
   triggerDownload,
   type ReportTarget,
+  type NetworkReportTarget,
+  type NetworkReportData,
 } from '@/lib/report-generator'
 
 // ── Severity badge ────────────────────────────────────────────────────
@@ -133,6 +139,38 @@ function TargetCard({ rt, selected, onSelect }: { rt: ReportTarget; selected: bo
   )
 }
 
+function NetworkTargetCard({ rt, selected, onSelect }: { rt: NetworkReportTarget; selected: boolean; onSelect: () => void }) {
+  const { label: statusLabel, cls: statusCls } = statusBadge(rt.latestStatus)
+  const lastSeen = new Date(rt.latestScanDate).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  })
+  return (
+    <button
+      onClick={onSelect}
+      className={`w-full text-left p-4 rounded-lg border transition-colors ${
+        selected
+          ? 'border-primary bg-primary/5'
+          : 'border-foreground/10 hover:border-foreground/25 hover:bg-foreground/3'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-foreground font-mono truncate">{rt.target}</p>
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${statusCls}`}>{statusLabel}</span>
+            <span className="text-[10px] text-muted-foreground">Last scan {lastSeen}</span>
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-1 shrink-0 text-right">
+          {rt.hostCount > 0 && <span className="text-xs font-bold text-blue-400">{rt.hostCount} Hosts</span>}
+          {rt.cveCount > 0 && <span className="text-xs font-semibold text-violet-400">{rt.cveCount} CVEs</span>}
+          {rt.findingsCount > 0 && <span className="text-xs text-muted-foreground">{rt.findingsCount} Findings</span>}
+        </div>
+      </div>
+    </button>
+  )
+}
+
 // ── Generate modal ────────────────────────────────────────────────────
 
 function GenerateModal({ open, onClose, onGenerated }: {
@@ -144,8 +182,10 @@ function GenerateModal({ open, onClose, onGenerated }: {
   const [step,              setStep]            = useState(0)
   const [module,            setModule]          = useState<string>('web-security')
   const [reportableTargets, setReportableTargets] = useState<ReportTarget[]>([])
+  const [networkTargets,    setNetworkTargets]  = useState<NetworkReportTarget[]>([])
   const [targetsLoading,    setTargetsLoading]  = useState(false)
-  const [selectedTarget, setSelectedTarget] = useState<ReportTarget | null>(null)
+  const [selectedTarget,        setSelectedTarget]        = useState<ReportTarget | null>(null)
+  const [selectedNetworkTarget, setSelectedNetworkTarget] = useState<NetworkReportTarget | null>(null)
   const [formatPdf,      setFormatPdf]      = useState(true)
   const [formatExcel,    setFormatExcel]    = useState(false)
   const [generating,     setGenerating]     = useState(false)
@@ -153,79 +193,127 @@ function GenerateModal({ open, onClose, onGenerated }: {
   const [genError,       setGenError]       = useState<string | null>(null)
 
   function resetModal() {
-    setStep(0); setModule('web-security'); setReportableTargets([])
-    setSelectedTarget(null); setFormatPdf(true); setFormatExcel(false)
+    setStep(0); setModule('web-security'); setReportableTargets([]); setNetworkTargets([])
+    setSelectedTarget(null); setSelectedNetworkTarget(null)
+    setFormatPdf(true); setFormatExcel(false)
     setGenerating(false); setDone(false); setGenError(null)
   }
 
   function handleClose() { resetModal(); onClose() }
 
-  // Load reportable targets (built from findings/CVEs/assets collections)
+  // Load reportable targets when entering step 1
   useEffect(() => {
     if (step !== 1 || !user) return
     setTargetsLoading(true)
-    getReportableTargets(user.uid)
-      .then(setReportableTargets)
-      .catch(() => toast.error('Failed to load assessments'))
-      .finally(() => setTargetsLoading(false))
-  }, [step, user])
+    setSelectedTarget(null)
+    setSelectedNetworkTarget(null)
+    if (module === 'network-security') {
+      getNetworkReportableTargets(user.uid)
+        .then(setNetworkTargets)
+        .catch(() => toast.error('Failed to load network assessments'))
+        .finally(() => setTargetsLoading(false))
+    } else {
+      getReportableTargets(user.uid)
+        .then(setReportableTargets)
+        .catch(() => toast.error('Failed to load assessments'))
+        .finally(() => setTargetsLoading(false))
+    }
+  }, [step, user, module])
 
   async function handleGenerate() {
-    if (!user || !selectedTarget) return
+    if (!user) return
     if (!formatPdf && !formatExcel) { toast.error('Select at least one format'); return }
+
+    const isNetwork = module === 'network-security'
+    if (isNetwork && !selectedNetworkTarget) return
+    if (!isNetwork && !selectedTarget) return
 
     setGenerating(true)
     setGenError(null)
 
     try {
-      const { findings, cves, assets, latestScan } = await fetchReportDataByTarget(user.uid, selectedTarget.target)
+      const reportId = `RPT-${Date.now().toString(36).toUpperCase()}`
+      const genAt    = new Date().toISOString()
 
-      const reportId  = `RPT-${Date.now().toString(36).toUpperCase()}`
-      const genAt     = new Date().toISOString()
-      const filename  = `vectra-${selectedTarget.target.replace(/[^a-z0-9]/gi, '-')}-${new Date().toISOString().slice(0, 10)}`
+      if (isNetwork && selectedNetworkTarget) {
+        const { hosts, findings, cves, latestScan, timeline } =
+          await fetchNetworkReportData(user.uid, selectedNetworkTarget.target)
 
-      const reportData = {
-        target: selectedTarget.target,
-        scan: latestScan,
-        findings, cves, assets,
-        reportId, generatedBy: user.email ?? 'unknown',
+        const filename  = `vectra-network-${selectedNetworkTarget.target.replace(/[^a-z0-9]/gi, '-')}-${genAt.slice(0, 10)}`
+        const netData: NetworkReportData = {
+          target: selectedNetworkTarget.target,
+          scan: latestScan, hosts, findings, cves, timeline,
+          reportId, generatedBy: user.email ?? 'unknown',
+        }
+
+        if (formatPdf)   triggerDownload(await generateNetworkPdf(netData),   `${filename}.pdf`)
+        if (formatExcel) triggerDownload(await generateNetworkExcel(netData),  `${filename}.xlsx`)
+
+        const FC = {
+          critical: findings.filter((f) => f.severity === 'critical').length,
+          high:     findings.filter((f) => f.severity === 'high').length,
+          medium:   findings.filter((f) => f.severity === 'medium').length,
+          low:      findings.filter((f) => f.severity === 'low').length,
+          info:     findings.filter((f) => f.severity === 'info').length,
+        }
+
+        await createFirestoreReport(user.uid, {
+          reportId,
+          target:        selectedNetworkTarget.target,
+          scanId:        latestScan?.scanId ?? '',
+          module,
+          format:        [formatPdf && 'pdf', formatExcel && 'excel'].filter(Boolean) as string[],
+          generatedAt:   genAt,
+          generatedBy:   user.email ?? 'unknown',
+          findingsCount: findings.length,
+          cveCount:      cves.length,
+          assetsCount:   hosts.length,
+          criticalCount: FC.critical,
+          highCount:     FC.high,
+          mediumCount:   FC.medium,
+          lowCount:      FC.low,
+          infoCount:     FC.info,
+        })
+      } else if (selectedTarget) {
+        const { findings, cves, assets, latestScan } =
+          await fetchReportDataByTarget(user.uid, selectedTarget.target)
+
+        const filename  = `vectra-${selectedTarget.target.replace(/[^a-z0-9]/gi, '-')}-${genAt.slice(0, 10)}`
+        const webData = {
+          target: selectedTarget.target,
+          scan: latestScan, findings, cves, assets,
+          reportId, generatedBy: user.email ?? 'unknown',
+        }
+
+        if (formatPdf)   triggerDownload(await generatePdf(webData),   `${filename}.pdf`)
+        if (formatExcel) triggerDownload(await generateExcel(webData),  `${filename}.xlsx`)
+
+        const C = {
+          critical: findings.filter((f) => f.severity === 'critical').length,
+          high:     findings.filter((f) => f.severity === 'high').length,
+          medium:   findings.filter((f) => f.severity === 'medium').length,
+          low:      findings.filter((f) => f.severity === 'low').length,
+          info:     findings.filter((f) => f.severity === 'info').length,
+        }
+
+        await createFirestoreReport(user.uid, {
+          reportId,
+          target:        selectedTarget.target,
+          scanId:        latestScan?.scanId ?? '',
+          module,
+          format:        [formatPdf && 'pdf', formatExcel && 'excel'].filter(Boolean) as string[],
+          generatedAt:   genAt,
+          generatedBy:   user.email ?? 'unknown',
+          findingsCount: findings.length,
+          cveCount:      cves.length,
+          assetsCount:   assets.length,
+          criticalCount: C.critical,
+          highCount:     C.high,
+          mediumCount:   C.medium,
+          lowCount:      C.low,
+          infoCount:     C.info,
+        })
       }
-
-      if (formatPdf) {
-        const blob = await generatePdf(reportData)
-        triggerDownload(blob, `${filename}.pdf`)
-      }
-      if (formatExcel) {
-        const blob = await generateExcel(reportData)
-        triggerDownload(blob, `${filename}.xlsx`)
-      }
-
-      // Store metadata
-      const C = {
-        critical: findings.filter((f) => f.severity === 'critical').length,
-        high:     findings.filter((f) => f.severity === 'high').length,
-        medium:   findings.filter((f) => f.severity === 'medium').length,
-        low:      findings.filter((f) => f.severity === 'low').length,
-        info:     findings.filter((f) => f.severity === 'info').length,
-      }
-
-      await createFirestoreReport(user.uid, {
-        reportId,
-        target:        selectedTarget.target,
-        scanId:        latestScan?.scanId ?? '',
-        module,
-        format:        [formatPdf && 'pdf', formatExcel && 'excel'].filter(Boolean) as string[],
-        generatedAt:   genAt,
-        generatedBy:   user.email ?? 'unknown',
-        findingsCount: findings.length,
-        cveCount:      cves.length,
-        assetsCount:   assets.length,
-        criticalCount: C.critical,
-        highCount:     C.high,
-        mediumCount:   C.medium,
-        lowCount:      C.low,
-        infoCount:     C.info,
-      })
 
       setDone(true)
       onGenerated()
@@ -263,22 +351,27 @@ function GenerateModal({ open, onClose, onGenerated }: {
                   <p className="text-xs text-muted-foreground">Assets, findings, CVEs from web scans</p>
                 </div>
               </Label>
-              {[
-                { id: 'network-security', icon: ShieldAlert, label: 'Network Security' },
-                { id: 'cloud-security',   icon: FileText,    label: 'Cloud Security'   },
-              ].map((m) => (
-                <div key={m.id} className="flex items-center gap-3 p-3.5 rounded-lg border border-foreground/8 opacity-50 cursor-not-allowed">
-                  <div className="w-4 h-4 rounded-full border border-muted-foreground/30 shrink-0" />
-                  <div className="w-8 h-8 rounded-lg bg-foreground/5 flex items-center justify-center shrink-0">
-                    <m.icon className="w-4 h-4 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">{m.label}</p>
-                    <p className="text-xs text-muted-foreground/60">Coming soon</p>
-                  </div>
-                  <span className="ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded bg-foreground/8 text-muted-foreground/60 border border-foreground/10">SOON</span>
+              <Label className={`flex items-center gap-3 p-3.5 rounded-lg border cursor-pointer transition-colors ${module === 'network-security' ? 'border-primary bg-primary/5' : 'border-foreground/10 hover:border-foreground/25'}`}>
+                <RadioGroupItem value="network-security" />
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <ShieldAlert className="w-4 h-4 text-primary" />
                 </div>
-              ))}
+                <div>
+                  <p className="text-sm font-medium text-foreground">Network Security</p>
+                  <p className="text-xs text-muted-foreground">Hosts, ports, services, SSL/TLS, CVEs from network scans</p>
+                </div>
+              </Label>
+              <div className="flex items-center gap-3 p-3.5 rounded-lg border border-foreground/8 opacity-50 cursor-not-allowed">
+                <div className="w-4 h-4 rounded-full border border-muted-foreground/30 shrink-0" />
+                <div className="w-8 h-8 rounded-lg bg-foreground/5 flex items-center justify-center shrink-0">
+                  <FileText className="w-4 h-4 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Cloud Security</p>
+                  <p className="text-xs text-muted-foreground/60">Coming soon</p>
+                </div>
+                <span className="ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded bg-foreground/8 text-muted-foreground/60 border border-foreground/10">SOON</span>
+              </div>
             </RadioGroup>
             <div className="flex justify-end pt-2">
               <Button onClick={() => setStep(1)} className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg h-9 px-5 text-sm">
@@ -296,24 +389,34 @@ function GenerateModal({ open, onClose, onGenerated }: {
               <div className="flex items-center justify-center py-10">
                 <Loader2 className="w-5 h-5 animate-spin text-primary" />
               </div>
-            ) : reportableTargets.length === 0 ? (
+            ) : (module === 'network-security' ? networkTargets : reportableTargets).length === 0 ? (
               <div className="text-center py-10">
                 <AlertTriangle className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
                 <p className="text-sm text-muted-foreground">No assessments with data found.</p>
                 <p className="text-xs text-muted-foreground/70 mt-1">
-                  Run a scan and wait for findings or assets to be discovered before generating a report.
+                  Run a scan and wait for data to be discovered before generating a report.
                 </p>
               </div>
             ) : (
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                {reportableTargets.map((rt) => (
-                  <TargetCard
-                    key={rt.target}
-                    rt={rt}
-                    selected={selectedTarget?.target === rt.target}
-                    onSelect={() => setSelectedTarget(rt)}
-                  />
-                ))}
+                {module === 'network-security'
+                  ? networkTargets.map((rt) => (
+                      <NetworkTargetCard
+                        key={rt.target}
+                        rt={rt}
+                        selected={selectedNetworkTarget?.target === rt.target}
+                        onSelect={() => setSelectedNetworkTarget(rt)}
+                      />
+                    ))
+                  : reportableTargets.map((rt) => (
+                      <TargetCard
+                        key={rt.target}
+                        rt={rt}
+                        selected={selectedTarget?.target === rt.target}
+                        onSelect={() => setSelectedTarget(rt)}
+                      />
+                    ))
+                }
               </div>
             )}
             <div className="flex justify-between pt-2">
@@ -322,7 +425,7 @@ function GenerateModal({ open, onClose, onGenerated }: {
               </Button>
               <Button
                 onClick={() => setStep(2)}
-                disabled={!selectedTarget}
+                disabled={module === 'network-security' ? !selectedNetworkTarget : !selectedTarget}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg h-9 px-5 text-sm disabled:opacity-40"
               >
                 Next <ChevronRight className="w-3.5 h-3.5 ml-1" />
@@ -366,12 +469,17 @@ function GenerateModal({ open, onClose, onGenerated }: {
               </label>
             </div>
 
-            {selectedTarget && (
+            {(module === 'network-security' ? selectedNetworkTarget : selectedTarget) && (
               <div className="p-3 rounded-lg bg-foreground/3 border border-foreground/8">
                 <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Selected Target</p>
-                <p className="text-sm font-mono font-semibold text-foreground">{selectedTarget.target}</p>
+                <p className="text-sm font-mono font-semibold text-foreground">
+                  {(module === 'network-security' ? selectedNetworkTarget : selectedTarget)?.target}
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  {selectedTarget.findingsCount} findings · {selectedTarget.cveCount} CVEs · {selectedTarget.assetCount} assets
+                  {module === 'network-security'
+                    ? `${selectedNetworkTarget?.hostCount ?? 0} hosts · ${selectedNetworkTarget?.cveCount ?? 0} CVEs · ${selectedNetworkTarget?.findingsCount ?? 0} findings`
+                    : `${selectedTarget?.findingsCount ?? 0} findings · ${selectedTarget?.cveCount ?? 0} CVEs · ${selectedTarget?.assetCount ?? 0} assets`
+                  }
                 </p>
               </div>
             )}
@@ -399,11 +507,13 @@ function GenerateModal({ open, onClose, onGenerated }: {
                 <div className="p-4 rounded-lg bg-foreground/3 border border-foreground/8 space-y-2">
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">Target</span>
-                    <span className="font-mono font-semibold text-foreground">{selectedTarget?.target}</span>
+                    <span className="font-mono font-semibold text-foreground">
+                      {(module === 'network-security' ? selectedNetworkTarget : selectedTarget)?.target}
+                    </span>
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">Module</span>
-                    <span className="text-foreground">Web Security</span>
+                    <span className="text-foreground">{module === 'network-security' ? 'Network Security' : 'Web Security'}</span>
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">Formats</span>
@@ -412,7 +522,10 @@ function GenerateModal({ open, onClose, onGenerated }: {
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">Data</span>
                     <span className="text-muted-foreground">
-                      {selectedTarget?.findingsCount ?? 0} findings · {selectedTarget?.cveCount ?? 0} CVEs · {selectedTarget?.assetCount ?? 0} assets
+                      {module === 'network-security'
+                        ? `${selectedNetworkTarget?.hostCount ?? 0} hosts · ${selectedNetworkTarget?.cveCount ?? 0} CVEs · ${selectedNetworkTarget?.findingsCount ?? 0} findings`
+                        : `${selectedTarget?.findingsCount ?? 0} findings · ${selectedTarget?.cveCount ?? 0} CVEs · ${selectedTarget?.assetCount ?? 0} assets`
+                      }
                     </span>
                   </div>
                 </div>
@@ -465,6 +578,23 @@ function GenerateModal({ open, onClose, onGenerated }: {
 // ── Re-download helper ────────────────────────────────────────────────
 
 async function reDownload(uid: string, report: FirestoreReport, format: 'pdf' | 'excel') {
+  if (report.module === 'network-security') {
+    const { hosts, findings, cves, latestScan, timeline } = await fetchNetworkReportData(uid, report.target)
+    const netData: NetworkReportData = {
+      target: report.target,
+      scan: latestScan, hosts, findings, cves, timeline,
+      reportId: report.reportId,
+      generatedBy: report.generatedBy,
+    }
+    const filename = `vectra-network-${report.target.replace(/[^a-z0-9]/gi, '-')}-${report.generatedAt.slice(0, 10)}`
+    if (format === 'pdf') {
+      triggerDownload(await generateNetworkPdf(netData), `${filename}.pdf`)
+    } else {
+      triggerDownload(await generateNetworkExcel(netData), `${filename}.xlsx`)
+    }
+    return
+  }
+
   const { findings, cves, assets, latestScan } = await fetchReportDataByTarget(uid, report.target)
   const data = {
     target: report.target,
@@ -625,8 +755,12 @@ export default function ReportsPage() {
                           <p className="text-[10px] text-muted-foreground mt-0.5">{report.reportId}</p>
                         </td>
                         <td className="py-3.5 px-4">
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-                            Web Security
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${
+                            report.module === 'network-security'
+                              ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                              : 'bg-primary/10 text-primary border-primary/20'
+                          }`}>
+                            {report.module === 'network-security' ? 'Network Security' : 'Web Security'}
                           </span>
                         </td>
                         <td className="py-3.5 px-4">

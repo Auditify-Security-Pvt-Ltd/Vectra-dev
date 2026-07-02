@@ -42,9 +42,10 @@ export interface FirestoreNetworkScan {
   engines?: {
     host_discovery?: NetworkEngineState
     port_scan?: NetworkEngineState
+    service_detection?: NetworkEngineState
     cve_analysis?: NetworkEngineState
-    nuclei?: NetworkEngineState
     network_checks?: NetworkEngineState
+    ssl_analysis?: NetworkEngineState
   }
 }
 

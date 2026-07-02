@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft, Server, AlertTriangle, Bug, Wifi,
   CheckCircle2, Loader2, StopCircle, Radio, Network,
-  ShieldAlert, Cpu, GitBranch,
+  ShieldAlert, Cpu, GitBranch, Lock, ShieldCheck, Shield,
 } from 'lucide-react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
@@ -39,6 +39,7 @@ import {
 import { writeNetworkHost } from '@/lib/firestore-network-assets'
 import { writeNetworkFinding } from '@/lib/firestore-network-findings'
 import { writeNetworkCve } from '@/lib/firestore-network-cves'
+import { computeAndStoreTimeline } from '@/lib/firestore-network-timeline'
 import { API_BASE } from '@/lib/api'
 
 // ── Severity badge ────────────────────────────────────────────────────
@@ -160,9 +161,10 @@ function ParallelBlock({ scan }: { scan: FirestoreNetworkScan }) {
   const isDone     = ['completed', 'failed', 'cancelled'].includes(scan.status)
 
   const engines = [
-    { key: 'cve_analysis',   label: 'CVE Correlation', Icon: ShieldAlert },
-    { key: 'nuclei',         label: 'Nuclei',           Icon: Bug         },
-    { key: 'network_checks', label: 'Network Checks',   Icon: Cpu         },
+    { key: 'service_detection', label: 'Port & Service Analysis', Icon: Bug         },
+    { key: 'cve_analysis',      label: 'CVE Correlation',         Icon: ShieldAlert },
+    { key: 'network_checks',    label: 'Network Checks',          Icon: Cpu         },
+    { key: 'ssl_analysis',      label: 'SSL/TLS Analysis',        Icon: Lock        },
   ]
 
   return (
@@ -173,7 +175,7 @@ function ParallelBlock({ scan }: { scan: FirestoreNetworkScan }) {
         </div>
         <div className="flex-1">
           <p className={`text-xs font-medium ${labelColor(blockState)}`}>Parallel Analysis</p>
-          {isActive && <p className="text-[10px] text-muted-foreground/70">All 3 engines running simultaneously</p>}
+          {isActive && <p className="text-[10px] text-muted-foreground/70">Service analysis, CVE correlation &amp; network checks running in parallel</p>}
         </div>
       </div>
       {(isActive || isDone) && (
@@ -244,6 +246,15 @@ function useScanStream(uid: string, scanId: string, isActive: boolean) {
               await updateDoc(doc(db, 'users', uid, 'network_assets', h.hostId), {
                 ports: h.ports, isWebService: h.isWebService,
                 webPorts: h.webPorts, technologies: h.technologies,
+                ...(h.os           ? { os:           h.os           } : {}),
+                ...(h.osRaw        ? { osRaw:        h.osRaw        } : {}),
+                ...(h.osFamily     ? { osFamily:     h.osFamily     } : {}),
+                ...(h.osConfidence != null ? { osConfidence: h.osConfidence } : {}),
+                ...(h.mac          ? { mac:          h.mac          } : {}),
+                ...(h.vendor       ? { vendor:       h.vendor       } : {}),
+                ...(h.ssl          ? { ssl:          h.ssl          } : {}),
+                ...(h.riskScore    != null ? { riskScore:    h.riskScore    } : {}),
+                ...(h.riskLevel    ? { riskLevel:    h.riskLevel    } : {}),
               })
             } catch {}
           }
@@ -279,6 +290,11 @@ function useScanStream(uid: string, scanId: string, isActive: boolean) {
               duration: data.duration, engines: data.engines,
               completedAt: new Date().toISOString(),
             })
+            // Compute and store timeline diff
+            if (data.hosts?.length > 0) {
+              const scan = data
+              computeAndStoreTimeline(uid, scanId, scan.target, data.hosts).catch(() => {})
+            }
           }
         } catch {}
         streamRef.current = null
@@ -514,6 +530,19 @@ export default function NetworkScanDetailPage() {
                     {host.isWebService && (
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-blue-500/10 text-blue-400 border-blue-500/20">Web</span>
                     )}
+                    {(host as any).os && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-foreground/8 text-muted-foreground border border-foreground/10">{(host as any).os}</span>
+                    )}
+                    {(host as any).riskScore != null && (
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
+                        (host as any).riskLevel === 'critical' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                        (host as any).riskLevel === 'high'     ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' :
+                        (host as any).riskLevel === 'medium'   ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
+                        'bg-green-500/10 text-green-500 border-green-500/20'
+                      }`}>
+                        Risk {(host as any).riskScore}/100
+                      </span>
+                    )}
                   </div>
                   {host.ports.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1.5">
@@ -563,6 +592,11 @@ export default function NetworkScanDetailPage() {
                   </div>
                   {f.description && (
                     <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">{f.description}</p>
+                  )}
+                  {(f as any).recommendation && (
+                    <p className="text-[11px] text-primary/70 mt-1 line-clamp-2">
+                      <span className="font-medium">Fix: </span>{(f as any).recommendation}
+                    </p>
                   )}
                 </div>
               </div>
