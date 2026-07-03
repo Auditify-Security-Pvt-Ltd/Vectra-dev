@@ -23,6 +23,9 @@ const ROUTE_MAP: Record<string, Crumb> = {
   '/app/network-security/findings':       { label: 'Findings',  module: 'Network Security', moduleHref: '/app/network-security' },
   '/app/network-security/cves':           { label: 'CVEs',      module: 'Network Security', moduleHref: '/app/network-security' },
   '/app/network-security/scans':          { label: 'Scan Detail', module: 'Network Security', moduleHref: '/app/network-security' },
+  '/app/sast':                            { label: 'Dashboard',    module: 'SAST', moduleHref: '/app/sast' },
+  '/app/sast/scans':                      { label: 'Scan History', module: 'SAST', moduleHref: '/app/sast' },
+  '/app/sast/oauth/callback':             { label: 'OAuth Callback', module: 'SAST', moduleHref: '/app/sast' },
   '/app/cloud-security':                  { label: 'Cloud Security', module: 'Cloud Security', moduleHref: '/app/cloud-security' },
   '/app/reports':                         { label: 'Reports' },
   '/app/ai-analysis':                     { label: 'AI Analysis' },
@@ -38,6 +41,9 @@ function getBasePath(pathname: string): string {
   // Then fall back to 2-segment (/app/network-security/scans/[id] → /app/network-security/scans)
   const netScanMatch = pathname.match(/^(\/app\/network-security\/scans)\//)
   if (netScanMatch) return netScanMatch[1]
+  // SAST scan detail
+  const sastScanMatch = pathname.match(/^(\/app\/sast\/scans)\//)
+  if (sastScanMatch) return sastScanMatch[1]
   const match = pathname.match(/^(\/app\/[^/]+)/)
   return match ? match[1] : '/app/dashboard'
 }

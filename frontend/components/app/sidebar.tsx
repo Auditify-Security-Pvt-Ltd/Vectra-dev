@@ -8,6 +8,7 @@ import {
   Cloud, FileText, Sparkles, Users, LogOut, Settings,
   ChevronDown, ChevronRight,
   Globe, Wifi, Server, Shield, Lock, Clock, Activity,
+  Code2, LayoutList,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -66,6 +67,16 @@ const MODULES: NavModule[] = [
     ],
   },
   {
+    id: 'sast',
+    label: 'SAST',
+    icon: Code2,
+    href: '/app/sast',
+    items: [
+      { icon: LayoutList, label: 'Dashboard',    href: '/app/sast'        },
+      { icon: Zap,        label: 'Scan History', href: '/app/sast/scans'  },
+    ],
+  },
+  {
     id: 'cloud-security',
     label: 'Cloud Security',
     icon: Cloud,
@@ -103,6 +114,7 @@ function getModuleForPath(pathname: string): string | null {
     pathname.startsWith('/app/scans')
   ) return 'web-security'
   if (pathname.startsWith('/app/network-security')) return 'network-security'
+  if (pathname.startsWith('/app/sast'))             return 'sast'
   if (pathname.startsWith('/app/cloud-security'))   return 'cloud-security'
   // /app/findings is now standalone — no module expansion
   return null

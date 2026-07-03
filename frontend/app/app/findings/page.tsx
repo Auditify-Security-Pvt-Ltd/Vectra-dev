@@ -7,7 +7,7 @@ import {
   ChevronDown, ChevronRight, Globe, X, ExternalLink, Server,
   MessageSquare, Check, Download, Clock, RotateCcw, CheckCheck,
   Filter, SlidersHorizontal, FileText, User, UserCheck, UserMinus,
-  Copy, Link2, CheckCircle2, XCircle, CalendarClock,
+  Copy, Link2, CheckCircle2, XCircle, CalendarClock, Code2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,6 +15,7 @@ import { listenToFindings, type FirestoreFinding } from '@/lib/firestore-finding
 import { listenToCves, type FirestoreCve } from '@/lib/firestore-cves'
 import { listenToNetworkFindings, type FirestoreNetworkFinding } from '@/lib/firestore-network-findings'
 import { listenToNetworkCves, type FirestoreNetworkCve } from '@/lib/firestore-network-cves'
+import { listenToSastFindings, type FirestoreSastFinding } from '@/lib/firestore-sast-findings'
 import { useAuth } from '@/context/auth-context'
 import {
   listenToCveTracking, upsertCveTracking, defaultTracking, genTrackingId,
@@ -31,9 +32,9 @@ import {
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-type ModuleFilter = 'all' | 'web' | 'network'
+type ModuleFilter = 'all' | 'web' | 'network' | 'sast'
 type TypeFilter   = 'findings' | 'cves'
-type Module       = 'web' | 'network'
+type Module       = 'web' | 'network' | 'sast'
 
 interface NormalizedFinding {
   id:          string
@@ -102,13 +103,15 @@ type SlaFilter = 'all' | 'within_sla' | 'due_soon' | 'breached'
 // ── Constants ──────────────────────────────────────────────────────────
 
 const MODULE_BADGE: Record<Module, { label: string; cls: string }> = {
-  web:     { label: 'WEB',     cls: 'bg-blue-500/15 text-blue-400 border-blue-500/25'    },
-  network: { label: 'NETWORK', cls: 'bg-green-500/15 text-green-400 border-green-500/25' },
+  web:     { label: 'WEB',     cls: 'bg-blue-500/15 text-blue-400 border-blue-500/25'       },
+  network: { label: 'NETWORK', cls: 'bg-green-500/15 text-green-400 border-green-500/25'    },
+  sast:    { label: 'SAST',    cls: 'bg-violet-500/15 text-violet-400 border-violet-500/25' },
 }
 
 const MODULE_ICON: Record<Module, React.ComponentType<{ className?: string }>> = {
   web:     Globe,
   network: Server,
+  sast:    Code2,
 }
 
 const SEV_BADGE: Record<string, string> = {
@@ -139,6 +142,7 @@ const MODULE_FILTERS: { value: ModuleFilter; label: string }[] = [
   { value: 'all',     label: 'All Modules'      },
   { value: 'web',     label: 'Web Security'     },
   { value: 'network', label: 'Network Security' },
+  { value: 'sast',    label: 'SAST'             },
 ]
 
 const FINDING_SEV_KEYS = ['critical', 'high', 'medium', 'low', 'info'] as const
@@ -192,6 +196,23 @@ function normalizeNetworkCve(c: FirestoreNetworkCve): NormalizedCve {
     target: c.ip, published: c.published ?? null,
     description: c.description, scanId: c.scanId,
     createdAt: c.createdAt,
+  }
+}
+
+function normalizeSastFinding(f: FirestoreSastFinding): NormalizedFinding {
+  return {
+    id: f.findingId, module: 'sast',
+    severity: (f.severity ?? 'unknown').toLowerCase(),
+    title: f.title,
+    target: f.projectName,
+    scanner: f.category,
+    template: f.type,
+    description: f.description ?? '',
+    createdAt: f.createdAt,
+    scanId: f.scanId,
+    host: f.file ?? null,
+    matchedAt: f.line > 0 ? `line ${f.line}` : null,
+    port: null,
   }
 }
 
@@ -3274,15 +3295,16 @@ function VulnMgmtContent() {
 
   const rawModule = searchParams.get('module') ?? 'all'
   const rawType   = searchParams.get('type')   ?? 'findings'
-  const moduleFilter: ModuleFilter = (['all', 'web', 'network'] as const).includes(rawModule as ModuleFilter)
+  const moduleFilter: ModuleFilter = (['all', 'web', 'network', 'sast'] as const).includes(rawModule as ModuleFilter)
     ? rawModule as ModuleFilter : 'all'
   const typeFilter: TypeFilter = rawType === 'cves' ? 'cves' : 'findings'
 
   // Raw Firestore state
-  const [webFindings, setWebFindings] = useState<FirestoreFinding[]>([])
-  const [netFindings, setNetFindings] = useState<FirestoreNetworkFinding[]>([])
-  const [webCves,     setWebCves]     = useState<FirestoreCve[]>([])
-  const [netCves,     setNetCves]     = useState<FirestoreNetworkCve[]>([])
+  const [webFindings,  setWebFindings]  = useState<FirestoreFinding[]>([])
+  const [netFindings,  setNetFindings]  = useState<FirestoreNetworkFinding[]>([])
+  const [sastFindings, setSastFindings] = useState<FirestoreSastFinding[]>([])
+  const [webCves,      setWebCves]      = useState<FirestoreCve[]>([])
+  const [netCves,      setNetCves]      = useState<FirestoreNetworkCve[]>([])
 
   // SLA state
   const [slaPolicy,   setSlaPolicy]   = useState<SlaPolicy>(DEFAULT_SLA)
@@ -3316,18 +3338,20 @@ function VulnMgmtContent() {
     if (!user) return
     const u1 = listenToFindings(user.uid, setWebFindings)
     const u2 = listenToNetworkFindings(user.uid, setNetFindings)
-    const u3 = listenToCves(user.uid, setWebCves)
-    const u4 = listenToNetworkCves(user.uid, setNetCves)
-    const u5 = listenToSlaPolicy(user.uid, setSlaPolicy)
-    const u6 = listenToFindingTracking(user.uid, setDashTracking)
-    return () => { u1(); u2(); u3(); u4(); u5(); u6() }
+    const u3 = listenToSastFindings(user.uid, setSastFindings)
+    const u4 = listenToCves(user.uid, setWebCves)
+    const u5 = listenToNetworkCves(user.uid, setNetCves)
+    const u6 = listenToSlaPolicy(user.uid, setSlaPolicy)
+    const u7 = listenToFindingTracking(user.uid, setDashTracking)
+    return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7() }
   }, [user])
 
   // Normalize
   const allFindings = useMemo<NormalizedFinding[]>(() => [
     ...webFindings.map(normalizeFinding),
     ...netFindings.map(normalizeNetworkFinding),
-  ], [webFindings, netFindings])
+    ...sastFindings.map(normalizeSastFinding),
+  ], [webFindings, netFindings, sastFindings])
 
   const allCves = useMemo<NormalizedCve[]>(() => [
     ...webCves.map(normalizeCve),
@@ -3500,7 +3524,7 @@ function VulnMgmtContent() {
               : `${cardCount} of ${totalTargets} targets`}
             {moduleFilter !== 'all' && (
               <span className="ml-1.5 text-muted-foreground/40">
-                · {moduleFilter === 'web' ? 'Web' : 'Network'}
+                · {moduleFilter === 'web' ? 'Web' : moduleFilter === 'network' ? 'Network' : 'SAST'}
               </span>
             )}
           </p>
@@ -3578,6 +3602,7 @@ function VulnMgmtContent() {
             Cloud
           </button>
         </div>
+
 
         <div className="h-4 w-px bg-foreground/10" />
 

@@ -5,24 +5,20 @@ import { useRouter } from 'next/navigation'
 import { BarChart3, TrendingUp, AlertTriangle, Clock, Plus, CheckCircle2, XCircle, Ban, Timer, ShieldAlert, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, LineChart, Line,
-} from 'recharts'
+import dynamic from 'next/dynamic'
 import { NewAssessmentModal } from '@/components/app/new-assessment-modal'
+
+// Lazy-load charts (recharts is ~500KB) to keep initial render fast
+const DashboardCharts = dynamic(
+  () => import('@/components/app/dashboard-charts').then(m => ({ default: m.DashboardCharts })),
+  { ssr: false, loading: () => <div className="h-72 animate-pulse bg-foreground/5 rounded-xl" /> },
+)
+
 import { listenToScans, ACTIVE_STATUSES, type FirestoreScan } from '@/lib/firestore-scans'
 import { listenToFindings, type FirestoreFinding } from '@/lib/firestore-findings'
 import { listenToAssets, type FirestoreAsset } from '@/lib/firestore-assets'
 import { listenToCves, type FirestoreCve } from '@/lib/firestore-cves'
 import { useAuth } from '@/context/auth-context'
-
-const riskTrend = [
-  { date: '1 Jan', critical: 180, high: 240, medium: 180 },
-  { date: '8 Jan', critical: 165, high: 220, medium: 160 },
-  { date: '15 Jan', critical: 150, high: 200, medium: 140 },
-  { date: '22 Jan', critical: 143, high: 190, medium: 130 },
-  { date: '29 Jan', critical: 135, high: 175, medium: 120 },
-]
 
 function buildScanActivity(scans: FirestoreScan[]) {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -352,62 +348,8 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="bg-card border-foreground/10">
-          <CardHeader>
-            <CardTitle>Scan Activity</CardTitle>
-            <CardDescription>Last 7 days of scan operations</CardDescription>
-          </CardHeader>
-          <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={scanActivity}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="date" stroke="rgba(255,255,255,0.5)" />
-                <YAxis stroke="rgba(255,255,255,0.5)" allowDecimals={false} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'rgba(0,0,0,0.8)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '8px',
-                  }}
-                />
-                <Legend />
-                <Bar dataKey="completed" fill="#8b5cf6" name="Completed" />
-                <Bar dataKey="failed" fill="#ef4444" name="Failed" />
-                <Bar dataKey="pending" fill="#f97316" name="Pending" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-foreground/10">
-          <CardHeader>
-            <CardTitle>Risk Trend</CardTitle>
-            <CardDescription>Security findings over time</CardDescription>
-          </CardHeader>
-          <CardContent className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={riskTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="date" stroke="rgba(255,255,255,0.5)" />
-                <YAxis stroke="rgba(255,255,255,0.5)" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'rgba(0,0,0,0.8)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '8px',
-                  }}
-                />
-                <Legend />
-                <Line type="monotone" dataKey="critical" stroke="#ef4444" strokeWidth={2} name="Critical" />
-                <Line type="monotone" dataKey="high" stroke="#f97316" strokeWidth={2} name="High" />
-                <Line type="monotone" dataKey="medium" stroke="#eab308" strokeWidth={2} name="Medium" />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Charts — loaded lazily to keep initial render fast */}
+      <DashboardCharts scanActivity={scanActivity} />
 
       {/* Recent Scans */}
       <Card className="bg-card border-foreground/10">
