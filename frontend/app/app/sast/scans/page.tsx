@@ -132,7 +132,7 @@ export default function SastScansPage() {
   useEffect(() => {
     if (!user) return
     setLoading(true)
-    const unsub = listenToSastScans(user.uid, (s) => {
+    const unsub = listenToSastScans(user.organizationId, (s) => {
       setScans(s)
       setLoading(false)
     })
@@ -145,8 +145,8 @@ export default function SastScansPage() {
     if (!ok) return
     try {
       await Promise.all([
-        deleteSastScan(user.uid, scan.scanId),
-        deleteSastFindingsByScan(user.uid, scan.scanId),
+        deleteSastScan(user.organizationId, scan.scanId),
+        deleteSastFindingsByScan(user.organizationId, scan.scanId),
         deleteSastScanApi(scan.scanId).catch(() => {}),
       ])
       toast.success('Scan deleted')

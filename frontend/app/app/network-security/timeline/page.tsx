@@ -150,7 +150,7 @@ export default function NetworkTimelinePage() {
 
   useEffect(() => {
     if (!user) return
-    return listenToNetworkTimeline(user.uid, setEvents)
+    return listenToNetworkTimeline(user.organizationId, setEvents)
   }, [user])
 
   const filtered = events.filter((e) =>

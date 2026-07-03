@@ -881,7 +881,7 @@ export default function FindingsDetailPage() {
 
   useEffect(() => {
     if (!user) return
-    return listenToFindingsByScan(user.uid, scanId, (f) => {
+    return listenToFindingsByScan(user.organizationId, scanId, (f) => {
       setFindings(f)
       setLoading(false)
     })

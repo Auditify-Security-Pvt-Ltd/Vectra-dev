@@ -64,14 +64,14 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
   // ── Realtime scan listener ──────────────────────────────────────────
   useEffect(() => {
     if (!user) return
-    return listenToScans(user.uid, setScans)
+    return listenToScans(user.organizationId, setScans)
   }, [user])
 
   // ── Manage SSE connections + Firestore writes ───────────────────────
   useEffect(() => {
     if (!user) return
 
-    const uid         = user.uid
+    const uid         = user.organizationId
     const connections = connectionsRef.current
     const bulkTimers  = bulkTimersRef.current
     const backfilled  = backfilledRef.current

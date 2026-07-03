@@ -262,7 +262,7 @@ function NewScanModal({ open, onClose }: { open: boolean; onClose: () => void })
         const f = zipRef.current?.files?.[0]
         if (!f) { toast.error('Select a ZIP file'); return }
         const res  = await uploadSastZip(f, projectName.trim(), user.uid)
-        await createSastScan(user.uid, makeBlankScan(res.scanId, projectName.trim(), 'zip', user.uid))
+        await createSastScan(user.organizationId, makeBlankScan(res.scanId, projectName.trim(), 'zip', user.uid))
         handleClose()
         router.push(`/app/sast/scans/${res.scanId}`)
 
@@ -270,7 +270,7 @@ function NewScanModal({ open, onClose }: { open: boolean; onClose: () => void })
         const files = dirRef.current?.files
         if (!files || files.length === 0) { toast.error('Select a source folder'); return }
         const res  = await uploadSastDirectory(files, projectName.trim(), user.uid)
-        await createSastScan(user.uid, makeBlankScan(res.scanId, projectName.trim(), 'directory', user.uid, files.length))
+        await createSastScan(user.organizationId, makeBlankScan(res.scanId, projectName.trim(), 'directory', user.uid, files.length))
         handleClose()
         router.push(`/app/sast/scans/${res.scanId}`)
 
@@ -292,7 +292,7 @@ function NewScanModal({ open, onClose }: { open: boolean; onClose: () => void })
           repoName:      selectedRepo.name,
           repoBranch:    selectedBranch,
         }
-        await createSastScan(user.uid, scan)
+        await createSastScan(user.organizationId, scan)
         handleClose()
         router.push(`/app/sast/scans/${res.scanId}`)
       }
@@ -645,7 +645,7 @@ export default function SastPage() {
 
   useEffect(() => {
     if (!user) return
-    return listenToSastScans(user.uid, setScans)
+    return listenToSastScans(user.organizationId, setScans)
   }, [user])
 
   const running   = scans.filter((s) => SAST_ACTIVE_STATUSES.has(s.status)).length

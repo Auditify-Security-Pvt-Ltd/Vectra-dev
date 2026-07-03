@@ -28,13 +28,18 @@ export interface FindingTimelineEvent {
 }
 
 export interface FindingTracking {
-  findingDocId:  string
-  status:        FindingStatus
-  assigneeId:    string | null
-  assigneeName:  string | null
-  comments:      FindingComment[]
-  timeline:      FindingTimelineEvent[]
-  updatedAt:     string
+  findingDocId:   string
+  status:         FindingStatus
+  assigneeId:     string | null
+  assigneeName:   string | null
+  assigneeEmail?: string | null
+  assigneeRole?:  string | null
+  assignedBy?:    string | null
+  assignedByName?: string | null
+  assignedAt?:    string | null
+  comments:       FindingComment[]
+  timeline:       FindingTimelineEvent[]
+  updatedAt:      string
 }
 
 export function genFindingId(): string {

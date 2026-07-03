@@ -55,7 +55,7 @@ export default function CveDetailPage() {
   useEffect(() => {
     if (!user) return
     setLoading(true)
-    return listenToCvesByVulnId(user.uid, cveId, (cves) => {
+    return listenToCvesByVulnId(user.organizationId, cveId, (cves) => {
       setEntries(cves)
       setLoading(false)
     })

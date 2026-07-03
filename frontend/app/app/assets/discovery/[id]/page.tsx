@@ -58,7 +58,7 @@ export default function DiscoveryDetailPage() {
   // Load initial state from Firestore
   useEffect(() => {
     if (!user) return
-    getFirestoreDiscovery(user.uid, discoveryId).then((d) => {
+    getFirestoreDiscovery(user.organizationId, discoveryId).then((d) => {
       if (d) setDiscovery(d)
       else setNotFound(true)
     })
@@ -67,7 +67,7 @@ export default function DiscoveryDetailPage() {
   // Realtime assets listener
   useEffect(() => {
     if (!user) return
-    return listenToAssetsByDiscovery(user.uid, discoveryId, setAssets)
+    return listenToAssetsByDiscovery(user.organizationId, discoveryId, setAssets)
   }, [user, discoveryId])
 
   // SSE for real-time discovery state updates (local UI only — AssetSyncProvider writes to Firestore)

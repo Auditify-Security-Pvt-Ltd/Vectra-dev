@@ -66,7 +66,7 @@ export default function ScansPage() {
   // Firestore realtime listener
   useEffect(() => {
     if (!user) return
-    const unsub = listenToScans(user.uid, setScans)
+    const unsub = listenToScans(user.organizationId, setScans)
     return unsub
   }, [user])
 
@@ -80,14 +80,14 @@ export default function ScansPage() {
         toast.info(result.reason ?? 'Scan is no longer active')
         // Reflect the actual terminal state in Firestore so the list updates
         const actualStatus = result.reason?.includes('not found') ? 'cancelled' : 'cancelled'
-        await updateFirestoreScan(user.uid, scanId, {
+        await updateFirestoreScan(user.organizationId, scanId, {
           status: actualStatus,
           currentStep: result.reason ?? 'Cancelled',
         }).catch(() => {})
         return
       }
 
-      await updateFirestoreScan(user.uid, scanId, {
+      await updateFirestoreScan(user.organizationId, scanId, {
         status: 'cancelled',
         currentStep: 'Cancelled',
       })
@@ -106,7 +106,7 @@ export default function ScansPage() {
     setActionLoading(originalScanId)
     try {
       const result = await restartScan(originalScanId)
-      await createFirestoreScan(user.uid, {
+      await createFirestoreScan(user.organizationId, {
         scanId: result.scanId,
         target,
         scanType: 'DAST',

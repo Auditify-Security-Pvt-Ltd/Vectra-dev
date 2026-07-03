@@ -208,12 +208,12 @@ function GenerateModal({ open, onClose, onGenerated }: {
     setSelectedTarget(null)
     setSelectedNetworkTarget(null)
     if (module === 'network-security') {
-      getNetworkReportableTargets(user.uid)
+      getNetworkReportableTargets(user.organizationId)
         .then(setNetworkTargets)
         .catch(() => toast.error('Failed to load network assessments'))
         .finally(() => setTargetsLoading(false))
     } else {
-      getReportableTargets(user.uid)
+      getReportableTargets(user.organizationId)
         .then(setReportableTargets)
         .catch(() => toast.error('Failed to load assessments'))
         .finally(() => setTargetsLoading(false))
@@ -237,7 +237,7 @@ function GenerateModal({ open, onClose, onGenerated }: {
 
       if (isNetwork && selectedNetworkTarget) {
         const { hosts, findings, cves, latestScan, timeline } =
-          await fetchNetworkReportData(user.uid, selectedNetworkTarget.target)
+          await fetchNetworkReportData(user.organizationId, selectedNetworkTarget.target)
 
         const filename  = `vectra-network-${selectedNetworkTarget.target.replace(/[^a-z0-9]/gi, '-')}-${genAt.slice(0, 10)}`
         const netData: NetworkReportData = {
@@ -257,7 +257,7 @@ function GenerateModal({ open, onClose, onGenerated }: {
           info:     findings.filter((f) => f.severity === 'info').length,
         }
 
-        await createFirestoreReport(user.uid, {
+        await createFirestoreReport(user.organizationId, {
           reportId,
           target:        selectedNetworkTarget.target,
           scanId:        latestScan?.scanId ?? '',
@@ -276,7 +276,7 @@ function GenerateModal({ open, onClose, onGenerated }: {
         })
       } else if (selectedTarget) {
         const { findings, cves, assets, latestScan } =
-          await fetchReportDataByTarget(user.uid, selectedTarget.target)
+          await fetchReportDataByTarget(user.organizationId, selectedTarget.target)
 
         const filename  = `vectra-${selectedTarget.target.replace(/[^a-z0-9]/gi, '-')}-${genAt.slice(0, 10)}`
         const webData = {
@@ -296,7 +296,7 @@ function GenerateModal({ open, onClose, onGenerated }: {
           info:     findings.filter((f) => f.severity === 'info').length,
         }
 
-        await createFirestoreReport(user.uid, {
+        await createFirestoreReport(user.organizationId, {
           reportId,
           target:        selectedTarget.target,
           scanId:        latestScan?.scanId ?? '',
@@ -628,7 +628,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     if (!user) return
-    return listenToReports(user.uid, (r) => {
+    return listenToReports(user.organizationId, (r) => {
       setReports(r)
       setReportsLoading(false)
     })
@@ -637,7 +637,7 @@ export default function ReportsPage() {
   // Live count from findings collection — used for "Total Findings" dashboard counter
   useEffect(() => {
     if (!user) return
-    return listenToFindings(user.uid, (findings) => {
+    return listenToFindings(user.organizationId, (findings) => {
       setFindingsTotal(findings.length)
       setFindingsReady(true)
     })
@@ -648,7 +648,7 @@ export default function ReportsPage() {
     const key = `${report.reportId}-${format}`
     setDownloading(key)
     try {
-      await reDownload(user.uid, report, format)
+      await reDownload(user.organizationId, report, format)
       toast.success(`${format.toUpperCase()} downloaded`)
     } catch (err: any) {
       toast.error(err?.message ?? 'Download failed')
@@ -660,7 +660,7 @@ export default function ReportsPage() {
   async function handleDelete(reportId: string) {
     if (!user) return
     try {
-      await deleteFirestoreReport(user.uid, reportId)
+      await deleteFirestoreReport(user.organizationId, reportId)
       toast.success('Report deleted')
     } catch {
       toast.error('Failed to delete report')

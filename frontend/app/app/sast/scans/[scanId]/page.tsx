@@ -195,13 +195,13 @@ export default function SastScanDetailPage() {
   // Listen to Firestore scan doc
   useEffect(() => {
     if (!user) return
-    return listenToSastScan(user.uid, scanId, setScan)
+    return listenToSastScan(user.organizationId, scanId, setScan)
   }, [user, scanId])
 
   // Listen to Firestore findings
   useEffect(() => {
     if (!user) return
-    return listenToSastFindingsByScan(user.uid, scanId, setFindings)
+    return listenToSastFindingsByScan(user.organizationId, scanId, setFindings)
   }, [user, scanId])
 
   // Connect to SSE when scan is running or queued
@@ -218,7 +218,7 @@ export default function SastScanDetailPage() {
       scanId,
       // onEvent — update Firestore scan metadata
       async (payload: SastStreamPayload) => {
-        await updateSastScan(user.uid, scanId, {
+        await updateSastScan(user.organizationId, scanId, {
           status:           payload.status as any,
           progress:         payload.progress,
           currentStep:      payload.currentStep,
@@ -249,7 +249,7 @@ export default function SastScanDetailPage() {
         }))
 
         await Promise.all([
-          updateSastScan(user.uid, scanId, {
+          updateSastScan(user.organizationId, scanId, {
             status:           payload.status as any,
             progress:         100,
             currentStep:      payload.currentStep,
@@ -267,7 +267,7 @@ export default function SastScanDetailPage() {
             error:            payload.error,
             completedAt:      new Date().toISOString(),
           }),
-          writeSastFindings(user.uid, fsList),
+          writeSastFindings(user.organizationId, fsList),
         ])
       },
       // onError
@@ -289,7 +289,7 @@ export default function SastScanDetailPage() {
     try {
       await cancelSastScan(scanId)
       closeRef.current?.()
-      await updateSastScan(user.uid, scanId, {
+      await updateSastScan(user.organizationId, scanId, {
         status: 'cancelled', currentStep: 'Scan cancelled', completedAt: new Date().toISOString(),
       })
       toast.success('Scan cancelled')

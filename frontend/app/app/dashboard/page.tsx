@@ -18,7 +18,9 @@ import { listenToScans, ACTIVE_STATUSES, type FirestoreScan } from '@/lib/firest
 import { listenToFindings, type FirestoreFinding } from '@/lib/firestore-findings'
 import { listenToAssets, type FirestoreAsset } from '@/lib/firestore-assets'
 import { listenToCves, type FirestoreCve } from '@/lib/firestore-cves'
+import { listenToFindingTracking, type FindingTracking } from '@/lib/firestore-finding-tracking'
 import { useAuth } from '@/context/auth-context'
+import { UserCheck } from 'lucide-react'
 
 function buildScanActivity(scans: FirestoreScan[]) {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -56,26 +58,32 @@ export default function DashboardPage() {
   const [findings, setFindings] = useState<FirestoreFinding[]>([])
   const [assets, setAssets]     = useState<FirestoreAsset[]>([])
   const [cves, setCves]         = useState<FirestoreCve[]>([])
+  const [tracking, setTracking] = useState<Record<string, FindingTracking>>({})
   const [modalOpen, setModalOpen] = useState(false)
 
   useEffect(() => {
     if (!user) return
-    return listenToScans(user.uid, setScans)
+    return listenToScans(user.organizationId, setScans)
   }, [user])
 
   useEffect(() => {
     if (!user) return
-    return listenToFindings(user.uid, setFindings)
+    return listenToFindings(user.organizationId, setFindings)
   }, [user])
 
   useEffect(() => {
     if (!user) return
-    return listenToAssets(user.uid, setAssets)
+    return listenToAssets(user.organizationId, setAssets)
   }, [user])
 
   useEffect(() => {
     if (!user) return
-    return listenToCves(user.uid, setCves)
+    return listenToCves(user.organizationId, setCves)
+  }, [user])
+
+  useEffect(() => {
+    if (!user) return
+    return listenToFindingTracking(user.organizationId, setTracking)
   }, [user])
 
   const totalScans      = scans.length
@@ -172,7 +180,16 @@ export default function DashboardPage() {
   ]
 
   const scanActivity = buildScanActivity(scans)
-  const recentScans = scans.slice(0, 4)
+  const recentScans  = scans.slice(0, 4)
+
+  // My assigned findings — findings where current user is the assignee
+  const myAssigned = Object.values(tracking)
+    .filter(t => t.assigneeId === user?.uid && t.status !== 'fixed' && t.status !== 'not_applicable')
+    .sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : -1))
+    .slice(0, 5)
+
+  // Build a lookup of findingId → finding title/severity for display
+  const findingMeta = Object.fromEntries(findings.map(f => [f.findingId, f]))
 
   return (
     <div className="p-8 space-y-8">
@@ -343,6 +360,68 @@ export default function DashboardPage() {
                   </p>
                 </div>
               ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* My Assigned Findings */}
+      {myAssigned.length > 0 && (
+        <Card className="bg-card border-foreground/10">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-primary" />
+                <div>
+                  <CardTitle>My Assigned Findings</CardTitle>
+                  <CardDescription>Findings currently assigned to you</CardDescription>
+                </div>
+              </div>
+              <Button variant="outline" className="h-9 rounded-lg border-foreground/20" onClick={() => router.push('/app/findings?assignee=me')}>
+                View All
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {myAssigned.map(t => {
+                const f = findingMeta[t.findingDocId]
+                const sevColor: Record<string, string> = {
+                  critical: 'text-red-400 bg-red-500/10 border-red-500/20',
+                  high:     'text-orange-400 bg-orange-500/10 border-orange-500/20',
+                  medium:   'text-yellow-400 bg-yellow-500/10 border-yellow-500/20',
+                  low:      'text-blue-400 bg-blue-500/10 border-blue-500/20',
+                  info:     'text-foreground/50 bg-foreground/5 border-foreground/15',
+                }
+                return (
+                  <div
+                    key={t.findingDocId}
+                    className="flex items-center gap-3 p-3 rounded-lg border border-foreground/8 hover:bg-foreground/5 transition-colors cursor-pointer"
+                    onClick={() => router.push(`/app/findings?findingId=${t.findingDocId}`)}
+                  >
+                    {f ? (
+                      <>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border capitalize shrink-0 ${sevColor[f.severity] ?? sevColor.info}`}>
+                          {f.severity}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{f.title}</p>
+                          <p className="text-xs text-muted-foreground truncate">{f.target}</p>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground flex-1">{t.findingDocId}</p>
+                    )}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border capitalize shrink-0 ${
+                      t.status === 'open'        ? 'text-red-400 border-red-500/20 bg-red-500/8' :
+                      t.status === 'in_progress' ? 'text-yellow-400 border-yellow-500/20 bg-yellow-500/8' :
+                      'text-foreground/50 border-foreground/15 bg-foreground/5'
+                    }`}>
+                      {t.status.replace('_', ' ')}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           </CardContent>
         </Card>

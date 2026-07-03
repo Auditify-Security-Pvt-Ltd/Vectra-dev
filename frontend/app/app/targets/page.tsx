@@ -64,7 +64,7 @@ export default function TargetsPage() {
   // Firestore realtime listener
   useEffect(() => {
     if (!user) return
-    const unsub = listenToTargets(user.uid, setTargets)
+    const unsub = listenToTargets(user.organizationId, setTargets)
     return unsub
   }, [user])
 
@@ -106,10 +106,10 @@ export default function TargetsPage() {
 
     try {
       if (editTarget) {
-        await updateTarget(user.uid, editTarget.id, data)
+        await updateTarget(user.organizationId, editTarget.id, data)
         toast.success('Target updated')
       } else {
-        await createTarget(user.uid, data)
+        await createTarget(user.organizationId, data)
         toast.success('Target created')
       }
       setFormOpen(false)
@@ -126,7 +126,7 @@ export default function TargetsPage() {
     if (!user || !deleteId) return
     setDeleteLoading(true)
     try {
-      await deleteTarget(user.uid, deleteId)
+      await deleteTarget(user.organizationId, deleteId)
       toast.success('Target deleted')
       setDeleteId(null)
     } catch (err) {

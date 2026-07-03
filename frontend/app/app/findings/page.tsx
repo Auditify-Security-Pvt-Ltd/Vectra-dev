@@ -17,6 +17,8 @@ import { listenToNetworkFindings, type FirestoreNetworkFinding } from '@/lib/fir
 import { listenToNetworkCves, type FirestoreNetworkCve } from '@/lib/firestore-network-cves'
 import { listenToSastFindings, type FirestoreSastFinding } from '@/lib/firestore-sast-findings'
 import { useAuth } from '@/context/auth-context'
+import { useTeam } from '@/context/team-context'
+import type { OrgMember } from '@/lib/firestore-team'
 import {
   listenToCveTracking, upsertCveTracking, defaultTracking, genTrackingId,
   type CveStatus, type CveComment, type CveTimelineEvent, type CveTracking,
@@ -697,14 +699,13 @@ function CveTargetCard({
   )
 }
 
-// ── Findings enterprise panel — shared constants ───────────────────────
+// ── Findings enterprise panel — shared helpers ───────────────────────
 
-const TEAM_MEMBERS = [
-  { id: 'user-john',  name: 'John Doe'      },
-  { id: 'user-jane',  name: 'Jane Smith'    },
-  { id: 'user-bob',   name: 'Bob Johnson'   },
-  { id: 'user-alice', name: 'Alice Williams'},
-]
+const ROLE_COLORS: Record<string, string> = {
+  admin:  'text-primary bg-primary/10 border-primary/20',
+  editor: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
+  viewer: 'text-muted-foreground bg-foreground/8 border-foreground/15',
+}
 
 function avatarInitials(name: string) {
   return name.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2)
@@ -729,24 +730,25 @@ function AssigneeAvatar({ name, size = 'sm' }: { name: string | null; size?: 'sm
 // Assignee picker modal — select or unassign
 function AssigneePickerModal({
   current,
-  currentUser,
+  members,
   onSelect,
   onUnassign,
   onClose,
 }: {
-  current:     { id: string; name: string } | null
-  currentUser: { uid: string; name: string } | null
-  onSelect:    (m: { id: string; name: string }) => void
-  onUnassign:  () => void
-  onClose:     () => void
+  current:    { id: string; name: string } | null
+  members:    OrgMember[]
+  onSelect:   (m: OrgMember) => void
+  onUnassign: () => void
+  onClose:    () => void
 }) {
-  const allMembers = useMemo(() => {
-    const base = [...TEAM_MEMBERS]
-    if (currentUser && !base.find(m => m.id === currentUser.uid)) {
-      base.unshift({ id: currentUser.uid, name: currentUser.name })
-    }
-    return base
-  }, [currentUser])
+  const [search, setSearch] = useState('')
+  const sorted = useMemo(() => {
+    const order = { admin: 0, editor: 1, viewer: 2 }
+    const q = search.toLowerCase()
+    return [...members]
+      .filter(m => m.status === 'active' && (!q || m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)))
+      .sort((a, b) => (order[a.orgRole] ?? 3) - (order[b.orgRole] ?? 3) || a.name.localeCompare(b.name))
+  }, [members, search])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -761,18 +763,32 @@ function AssigneePickerModal({
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="space-y-1">
-          {allMembers.map(m => (
+        <input
+          autoFocus
+          placeholder="Search members..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full text-xs px-3 py-2 rounded-lg bg-foreground/5 border border-foreground/15 text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/40"
+        />
+        <div className="space-y-1 max-h-56 overflow-y-auto">
+          {sorted.length === 0 && <p className="text-xs text-muted-foreground text-center py-3">No members found</p>}
+          {sorted.map(m => (
             <button
-              key={m.id}
+              key={m.userId}
               onClick={() => { onSelect(m); onClose() }}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm hover:bg-foreground/5 transition-colors ${
-                current?.id === m.id ? 'text-foreground' : 'text-muted-foreground'
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm hover:bg-foreground/5 transition-colors ${
+                current?.id === m.userId ? 'bg-primary/8 text-foreground' : 'text-foreground'
               }`}
             >
               <AssigneeAvatar name={m.name} />
-              <span>{m.name}</span>
-              {current?.id === m.id && <Check className="w-3.5 h-3.5 ml-auto text-primary" strokeWidth={2.5} />}
+              <div className="flex-1 min-w-0 text-left">
+                <p className="text-xs font-medium leading-tight truncate">{m.name}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{m.email}</p>
+              </div>
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border capitalize shrink-0 ${ROLE_COLORS[m.orgRole] ?? ROLE_COLORS.viewer}`}>
+                {m.orgRole}
+              </span>
+              {current?.id === m.userId && <Check className="w-3.5 h-3.5 text-primary shrink-0" strokeWidth={2.5} />}
             </button>
           ))}
           {current && (
@@ -780,7 +796,7 @@ function AssigneePickerModal({
               <div className="h-px bg-foreground/8 my-1" />
               <button
                 onClick={() => { onUnassign(); onClose() }}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
               >
                 <UserMinus className="w-4 h-4 text-muted-foreground/50" />
                 Unassign
@@ -796,48 +812,63 @@ function AssigneePickerModal({
 // Bulk assign modal
 function BulkAssignModal({
   count,
-  currentUser,
+  members,
   onAssign,
   onClose,
   loading,
 }: {
-  count:       number
-  currentUser: { uid: string; name: string } | null
-  onAssign:    (m: { id: string; name: string }) => void
-  onClose:     () => void
-  loading:     boolean
+  count:    number
+  members:  OrgMember[]
+  onAssign: (m: OrgMember) => void
+  onClose:  () => void
+  loading:  boolean
 }) {
-  const allMembers = useMemo(() => {
-    const base = [...TEAM_MEMBERS]
-    if (currentUser && !base.find(m => m.id === currentUser.uid)) {
-      base.unshift({ id: currentUser.uid, name: currentUser.name })
-    }
-    return base
-  }, [currentUser])
-  const [chosen, setChosen] = useState<{ id: string; name: string } | null>(null)
+  const [chosen, setChosen] = useState<OrgMember | null>(null)
+  const [search, setSearch] = useState('')
+  const sorted = useMemo(() => {
+    const order = { admin: 0, editor: 1, viewer: 2 }
+    const q = search.toLowerCase()
+    return [...members]
+      .filter(m => m.status === 'active' && (!q || m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)))
+      .sort((a, b) => (order[a.orgRole] ?? 3) - (order[b.orgRole] ?? 3) || a.name.localeCompare(b.name))
+  }, [members, search])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-card border border-foreground/15 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5">
+      <div className="relative bg-card border border-foreground/15 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
         <div className="flex items-center gap-2.5">
           <UserCheck className="w-4 h-4 text-primary" />
           <h3 className="text-sm font-semibold text-foreground">Assign {count} Findings</h3>
         </div>
-        <div className="space-y-1">
-          {allMembers.map(m => (
+        <input
+          autoFocus
+          placeholder="Search members..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full text-xs px-3 py-2 rounded-lg bg-foreground/5 border border-foreground/15 text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/40"
+        />
+        <div className="space-y-1 max-h-52 overflow-y-auto">
+          {sorted.length === 0 && <p className="text-xs text-muted-foreground text-center py-3">No members found</p>}
+          {sorted.map(m => (
             <button
-              key={m.id}
+              key={m.userId}
               onClick={() => setChosen(m)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                chosen?.id === m.id
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+                chosen?.userId === m.userId
                   ? 'bg-primary/10 text-foreground border border-primary/25'
                   : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground border border-transparent'
               }`}
             >
               <AssigneeAvatar name={m.name} />
-              <span>{m.name}</span>
-              {chosen?.id === m.id && <Check className="w-3.5 h-3.5 ml-auto text-primary" strokeWidth={2.5} />}
+              <div className="flex-1 min-w-0 text-left">
+                <p className="text-xs font-medium leading-tight truncate text-foreground">{m.name}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{m.email}</p>
+              </div>
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border capitalize shrink-0 ${ROLE_COLORS[m.orgRole] ?? ROLE_COLORS.viewer}`}>
+                {m.orgRole}
+              </span>
+              {chosen?.userId === m.userId && <Check className="w-3.5 h-3.5 text-primary shrink-0" strokeWidth={2.5} />}
             </button>
           ))}
         </div>
@@ -863,6 +894,7 @@ function FindingDrawer({
   finding,
   tracking,
   currentUser,
+  members,
   slaPolicy,
   onClose,
   onStatusChange,
@@ -873,10 +905,11 @@ function FindingDrawer({
   finding:        NormalizedFinding
   tracking:       FindingTracking
   currentUser:    { uid: string; name: string } | null
+  members:        OrgMember[]
   slaPolicy:      SlaPolicy
   onClose:        () => void
   onStatusChange: (s: FindingStatus) => void
-  onAssign:       (m: { id: string; name: string }) => void
+  onAssign:       (m: OrgMember) => void
   onUnassign:     () => void
   onAddComment:   () => void
 }) {
@@ -1176,7 +1209,7 @@ function FindingDrawer({
       {assigneeOpen && (
         <AssigneePickerModal
           current={tracking.assigneeId ? { id: tracking.assigneeId, name: tracking.assigneeName ?? '' } : null}
-          currentUser={currentUser}
+          members={members}
           onSelect={onAssign}
           onUnassign={onUnassign}
           onClose={() => setAssigneeOpen(false)}
@@ -1271,8 +1304,9 @@ function FindingsPanel({
   onClose:   () => void
   slaPolicy: SlaPolicy
 }) {
-  const { user } = useAuth()
-  const Icon     = MODULE_ICON[summary.module]
+  const { user }    = useAuth()
+  const { members } = useTeam()
+  const Icon        = MODULE_ICON[summary.module]
 
   // ── Tracking state ────────────────────────────────────────────────
   const [tracking, setTracking] = useState<Record<string, FindingTracking>>({})
@@ -1302,7 +1336,7 @@ function FindingsPanel({
   // ── Load tracking ─────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return
-    return listenToFindingTracking(user.uid, setTracking)
+    return listenToFindingTracking(user.organizationId, setTracking)
   }, [user])
 
   function getT(findingId: string): FindingTracking {
@@ -1324,11 +1358,11 @@ function FindingsPanel({
       timeline: [...existing.timeline, ev], updatedAt: now,
     }
     setTracking(prev => ({ ...prev, [findingDocId]: updated }))
-    await upsertFindingTracking(user.uid, updated)
+    await upsertFindingTracking(user.organizationId, updated)
   }
 
   // ── Assign ────────────────────────────────────────────────────────
-  async function assignFinding(findingDocId: string, assignee: { id: string; name: string } | null) {
+  async function assignFinding(findingDocId: string, assignee: OrgMember | null) {
     if (!user) return
     const existing = getT(findingDocId)
     const now = new Date().toISOString()
@@ -1340,16 +1374,21 @@ function FindingsPanel({
     }
     const updated: FindingTracking = {
       ...existing, findingDocId,
-      assigneeId:   assignee?.id   ?? null,
-      assigneeName: assignee?.name ?? null,
+      assigneeId:    assignee?.userId   ?? null,
+      assigneeName:  assignee?.name     ?? null,
+      assigneeEmail: assignee?.email    ?? null,
+      assigneeRole:  assignee?.orgRole  ?? null,
+      assignedBy:    assignee ? user.uid   : null,
+      assignedByName: assignee ? user.name : null,
+      assignedAt:    assignee ? now : null,
       timeline: [...existing.timeline, ev], updatedAt: now,
     }
     setTracking(prev => ({ ...prev, [findingDocId]: updated }))
-    await upsertFindingTracking(user.uid, updated)
+    await upsertFindingTracking(user.organizationId, updated)
   }
 
   // ── Bulk assign ───────────────────────────────────────────────────
-  async function bulkAssign(findingIds: string[], assignee: { id: string; name: string }) {
+  async function bulkAssign(findingIds: string[], assignee: OrgMember) {
     if (!user) return
     setOpLoading(true)
     try {
@@ -1383,7 +1422,7 @@ function FindingsPanel({
           timeline: [...existing.timeline, ev], updatedAt: now,
         }
         setTracking(prev => ({ ...prev, [findingDocId]: updated }))
-        return upsertFindingTracking(user.uid, updated)
+        return upsertFindingTracking(user.organizationId, updated)
       }))
     } finally {
       setOpLoading(false)
@@ -1872,7 +1911,7 @@ function FindingsPanel({
       {assignTargets && (
         <BulkAssignModal
           count={assignTargets.length}
-          currentUser={user}
+          members={members}
           onAssign={(m) => bulkAssign(assignTargets, m)}
           onClose={() => setAssignTargets(null)}
           loading={opLoading}
@@ -1890,6 +1929,7 @@ function FindingsPanel({
           finding={drawerFinding}
           tracking={getT(drawerFinding.id)}
           currentUser={user}
+          members={members}
           slaPolicy={slaPolicy}
           onClose={() => setDrawerFinding(null)}
           onStatusChange={(s) => changeStatus(drawerFinding.id, s)}
@@ -2409,7 +2449,7 @@ function CvesPanel({
   // ── Load tracking ─────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return
-    return listenToCveTracking(user.uid, setTracking)
+    return listenToCveTracking(user.organizationId, setTracking)
   }, [user])
 
   function getT(cveId: string): CveTracking {
@@ -2437,7 +2477,7 @@ function CvesPanel({
       updatedAt: now,
     }
     setTracking(prev => ({ ...prev, [cveDocId]: updated }))
-    await upsertCveTracking(user.uid, updated)
+    await upsertCveTracking(user.organizationId, updated)
   }
 
   // ── Add comment ───────────────────────────────────────────────────
@@ -2463,7 +2503,7 @@ function CvesPanel({
           updatedAt: now,
         }
         setTracking(prev => ({ ...prev, [cveDocId]: updated }))
-        return upsertCveTracking(user.uid, updated)
+        return upsertCveTracking(user.organizationId, updated)
       }))
     } finally {
       setOpLoading(false)
@@ -3292,6 +3332,7 @@ function VulnMgmtContent() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const { user }     = useAuth()
+  const { members }  = useTeam()
 
   const rawModule = searchParams.get('module') ?? 'all'
   const rawType   = searchParams.get('type')   ?? 'findings'
@@ -3336,13 +3377,13 @@ function VulnMgmtContent() {
 
   useEffect(() => {
     if (!user) return
-    const u1 = listenToFindings(user.uid, setWebFindings)
-    const u2 = listenToNetworkFindings(user.uid, setNetFindings)
-    const u3 = listenToSastFindings(user.uid, setSastFindings)
-    const u4 = listenToCves(user.uid, setWebCves)
-    const u5 = listenToNetworkCves(user.uid, setNetCves)
-    const u6 = listenToSlaPolicy(user.uid, setSlaPolicy)
-    const u7 = listenToFindingTracking(user.uid, setDashTracking)
+    const u1 = listenToFindings(user.organizationId, setWebFindings)
+    const u2 = listenToNetworkFindings(user.organizationId, setNetFindings)
+    const u3 = listenToSastFindings(user.organizationId, setSastFindings)
+    const u4 = listenToCves(user.organizationId, setWebCves)
+    const u5 = listenToNetworkCves(user.organizationId, setNetCves)
+    const u6 = listenToSlaPolicy(user.organizationId, setSlaPolicy)
+    const u7 = listenToFindingTracking(user.organizationId, setDashTracking)
     return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7() }
   }, [user])
 
@@ -3774,7 +3815,7 @@ function VulnMgmtContent() {
       {slaConfigOpen && user && (
         <SlaConfigModal
           policy={slaPolicy}
-          uid={user.uid}
+          uid={user.organizationId}
           onClose={() => setSlaConfigOpen(false)}
         />
       )}

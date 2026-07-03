@@ -329,7 +329,7 @@ export default function NetworkScanDetailPage() {
   // Firestore scan document listener (status, progress, logs, engines)
   useEffect(() => {
     if (!user) return
-    return listenToNetworkScan(user.uid, scanId, (s) => {
+    return listenToNetworkScan(user.organizationId, scanId, (s) => {
       setScan(s); setLoading(false)
     })
   }, [user, scanId])
@@ -337,17 +337,17 @@ export default function NetworkScanDetailPage() {
   // Sub-collection listeners — real data lives here, not in the scan doc
   useEffect(() => {
     if (!user) return
-    return listenToNetworkHostsByScan(user.uid, scanId, setLiveHosts)
+    return listenToNetworkHostsByScan(user.organizationId, scanId, setLiveHosts)
   }, [user, scanId])
 
   useEffect(() => {
     if (!user) return
-    return listenToNetworkFindingsByScan(user.uid, scanId, setFindings)
+    return listenToNetworkFindingsByScan(user.organizationId, scanId, setFindings)
   }, [user, scanId])
 
   useEffect(() => {
     if (!user) return
-    return listenToNetworkCvesByScan(user.uid, scanId, setCves)
+    return listenToNetworkCvesByScan(user.organizationId, scanId, setCves)
   }, [user, scanId])
 
   // SSE consumer — starts when scan is active, persists data to Firestore
@@ -361,7 +361,7 @@ export default function NetworkScanDetailPage() {
       if (!result.success) {
         toast.info(result.reason ?? 'Scan is no longer active')
         if (user) {
-          await updateNetworkScan(user.uid, scanId, {
+          await updateNetworkScan(user.organizationId, scanId, {
             status: 'cancelled',
             currentStep: result.reason ?? 'Cancelled',
           }).catch(() => {})
@@ -369,7 +369,7 @@ export default function NetworkScanDetailPage() {
         return
       }
 
-      if (user) await updateNetworkScan(user.uid, scanId, { status: 'cancelled', currentStep: 'Cancelled' })
+      if (user) await updateNetworkScan(user.organizationId, scanId, { status: 'cancelled', currentStep: 'Cancelled' })
       toast.success('Scan stopped')
     } catch {
       toast.error('Failed to stop scan')

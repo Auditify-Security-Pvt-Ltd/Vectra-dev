@@ -84,7 +84,7 @@ function NewNetworkScanModal({
       const scanId = resp.scanId
       const now    = new Date().toISOString()
 
-      await createNetworkScan(user.uid, {
+      await createNetworkScan(user.organizationId, {
         scanId, target: target.trim(), scanProfile: profile,
         status: 'queued', progress: 0, currentStep: 'Queued',
         logs: [{ timestamp: now, message: `Network scan queued (${profile})` }],
@@ -194,9 +194,9 @@ export default function NetworkSecurityPage() {
 
   useEffect(() => {
     if (!user) return
-    const unsubScans    = listenToNetworkScans(user.uid, setScans)
-    const unsubHosts    = listenToNetworkHosts(user.uid, setHosts)
-    const unsubFindings = listenToNetworkFindings(user.uid, setFindings)
+    const unsubScans    = listenToNetworkScans(user.organizationId, setScans)
+    const unsubHosts    = listenToNetworkHosts(user.organizationId, setHosts)
+    const unsubFindings = listenToNetworkFindings(user.organizationId, setFindings)
     return () => { unsubScans(); unsubHosts(); unsubFindings() }
   }, [user])
 
@@ -208,7 +208,7 @@ export default function NetworkSecurityPage() {
       if (!result.success) {
         toast.info(result.reason ?? 'Scan is no longer active')
         if (user) {
-          await updateNetworkScan(user.uid, scanId, {
+          await updateNetworkScan(user.organizationId, scanId, {
             status: 'cancelled',
             currentStep: result.reason ?? 'Cancelled',
           }).catch(() => {})
@@ -216,7 +216,7 @@ export default function NetworkSecurityPage() {
         return
       }
 
-      if (user) await updateNetworkScan(user.uid, scanId, { status: 'cancelled', currentStep: 'Cancelled' })
+      if (user) await updateNetworkScan(user.organizationId, scanId, { status: 'cancelled', currentStep: 'Cancelled' })
       toast.success('Scan stopped')
     } catch {
       toast.error('Failed to stop scan')

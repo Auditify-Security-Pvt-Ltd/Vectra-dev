@@ -27,7 +27,7 @@ function SlaPolicyCard() {
 
   useEffect(() => {
     if (!user) return
-    return listenToSlaPolicy(user.uid, (p) => {
+    return listenToSlaPolicy(user.organizationId, (p) => {
       setPolicy(p)
       setDraft(p)
     })
@@ -47,7 +47,7 @@ function SlaPolicyCard() {
     if (!user) return
     setSaving(true)
     try {
-      await saveSlaPolicy(user.uid, draft)
+      await saveSlaPolicy(user.organizationId, draft)
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } finally {

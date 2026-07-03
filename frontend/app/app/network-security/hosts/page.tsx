@@ -128,7 +128,7 @@ export default function NetworkHostsPage() {
 
   useEffect(() => {
     if (!user) return
-    return listenToNetworkHosts(user.uid, setHosts)
+    return listenToNetworkHosts(user.organizationId, setHosts)
   }, [user])
 
   const filtered = hosts.filter((h) =>

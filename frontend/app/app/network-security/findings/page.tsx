@@ -94,7 +94,7 @@ export default function NetworkFindingsPage() {
 
   useEffect(() => {
     if (!user) return
-    return listenToNetworkFindings(user.uid, setFindings)
+    return listenToNetworkFindings(user.organizationId, setFindings)
   }, [user])
 
   const filtered = findings

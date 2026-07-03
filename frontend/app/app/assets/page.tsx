@@ -68,8 +68,8 @@ export default function AssetsPage() {
 
   useEffect(() => {
     if (!user) return
-    const u1 = listenToAssets(user.uid, setAssets)
-    const u2 = listenToDiscoveries(user.uid, setDiscoveries)
+    const u1 = listenToAssets(user.organizationId, setAssets)
+    const u2 = listenToDiscoveries(user.organizationId, setDiscoveries)
     return () => { u1(); u2() }
   }, [user])
 
@@ -97,7 +97,7 @@ export default function AssetsPage() {
     if (!user) return
     setDeletingId(asset.assetId)
     try {
-      await deleteFirestoreAsset(user.uid, asset.assetId)
+      await deleteFirestoreAsset(user.organizationId, asset.assetId)
       deleteBackendAsset(asset.assetId).catch(() => {})
       toast.success(`Deleted ${asset.subdomain}`)
     } catch {

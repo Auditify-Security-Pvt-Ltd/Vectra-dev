@@ -58,14 +58,14 @@ export function AssetSyncProvider({ children }: { children: React.ReactNode }) {
   // Firestore realtime listener for all discoveries
   useEffect(() => {
     if (!user) return
-    return listenToDiscoveries(user.uid, setDiscoveries)
+    return listenToDiscoveries(user.organizationId, setDiscoveries)
   }, [user])
 
   // SSE management + Firestore writes
   useEffect(() => {
     if (!user) return
 
-    const uid = user.uid
+    const uid = user.organizationId
     const connections  = connectionsRef.current
     const statusTimers = statusTimersRef.current
 

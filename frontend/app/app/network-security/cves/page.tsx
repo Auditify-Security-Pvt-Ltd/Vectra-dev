@@ -86,7 +86,7 @@ export default function NetworkCvesPage() {
 
   useEffect(() => {
     if (!user) return
-    return listenToNetworkCves(user.uid, setCves)
+    return listenToNetworkCves(user.organizationId, setCves)
   }, [user])
 
   const filtered = cves
