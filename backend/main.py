@@ -24,6 +24,7 @@ from api.network_scans import router as network_router, start_scan_sweeper
 from api.network_schedules import router as schedules_router, start_scheduler
 from api.sast_scans import router as sast_router
 from api.sast_oauth import router as sast_oauth_router
+from api.team import router as team_router
 from utils.logger import get_logger
 
 # Root logger config — applied before any module imports log anything.
@@ -59,6 +60,7 @@ app.include_router(network_router)
 app.include_router(schedules_router)
 app.include_router(sast_router)
 app.include_router(sast_oauth_router)
+app.include_router(team_router)
 
 
 @app.on_event("startup")

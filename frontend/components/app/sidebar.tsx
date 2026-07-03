@@ -13,41 +13,43 @@ import {
 import { Button } from '@/components/ui/button'
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarHeader,
-  SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar,
+  SidebarMenu, SidebarMenuButton, SidebarMenuItem,
 } from '@/components/ui/sidebar'
 import { useAuth } from '@/context/auth-context'
+import { ROLE_VISIBLE_MODULES, ROLE_VISIBLE_BOTTOM } from '@/lib/rbac'
 
 // ── Type definitions ──────────────────────────────────────────────────
 
 interface NavItem {
-  icon: React.ComponentType<{ className?: string }>
+  icon:  React.ComponentType<{ className?: string }>
   label: string
-  href: string
+  href:  string
 }
 
 interface NavModule {
-  id: string
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-  href: string
-  items: NavItem[]
+  id:          string
+  label:       string
+  icon:        React.ComponentType<{ className?: string }>
+  href:        string
+  items:       NavItem[]
   comingSoon?: boolean
 }
 
 interface StandaloneItem {
+  id:   string
   icon: React.ComponentType<{ className?: string }>
   label: string
-  href: string
+  href:  string
 }
 
 // ── Navigation structure ──────────────────────────────────────────────
 
-const MODULES: NavModule[] = [
+const ALL_MODULES: NavModule[] = [
   {
-    id: 'web-security',
+    id:    'web-security',
     label: 'Web Security',
-    icon: Globe,
-    href: '/app/dashboard',
+    icon:  Globe,
+    href:  '/app/dashboard',
     items: [
       { icon: Network, label: 'Assets',  href: '/app/assets'  },
       { icon: Target,  label: 'Targets', href: '/app/targets' },
@@ -55,32 +57,32 @@ const MODULES: NavModule[] = [
     ],
   },
   {
-    id: 'network-security',
+    id:    'network-security',
     label: 'Network Security',
-    icon: Wifi,
-    href: '/app/network-security',
+    icon:  Wifi,
+    href:  '/app/network-security',
     items: [
-      { icon: Zap,      label: 'Scans',     href: '/app/network-security'            },
-      { icon: Server,   label: 'Hosts',     href: '/app/network-security/hosts'      },
-      { icon: Activity, label: 'Timeline',  href: '/app/network-security/timeline'   },
-      { icon: Clock,    label: 'Schedules', href: '/app/network-security/schedules'  },
+      { icon: Zap,      label: 'Scans',     href: '/app/network-security'           },
+      { icon: Server,   label: 'Hosts',     href: '/app/network-security/hosts'     },
+      { icon: Activity, label: 'Timeline',  href: '/app/network-security/timeline'  },
+      { icon: Clock,    label: 'Schedules', href: '/app/network-security/schedules' },
     ],
   },
   {
-    id: 'sast',
+    id:    'sast',
     label: 'SAST',
-    icon: Code2,
-    href: '/app/sast',
+    icon:  Code2,
+    href:  '/app/sast',
     items: [
-      { icon: LayoutList, label: 'Dashboard',    href: '/app/sast'        },
-      { icon: Zap,        label: 'Scan History', href: '/app/sast/scans'  },
+      { icon: LayoutList, label: 'Dashboard',    href: '/app/sast'       },
+      { icon: Zap,        label: 'Scan History', href: '/app/sast/scans' },
     ],
   },
   {
-    id: 'cloud-security',
-    label: 'Cloud Security',
-    icon: Cloud,
-    href: '/app/cloud-security',
+    id:         'cloud-security',
+    label:      'Cloud Security',
+    icon:       Cloud,
+    href:       '/app/cloud-security',
     comingSoon: true,
     items: [
       { icon: Shield,        label: 'Accounts',          href: '/app/cloud-security' },
@@ -95,28 +97,24 @@ const MODULES: NavModule[] = [
 ]
 
 const TOP_ITEMS: StandaloneItem[] = [
-  { icon: BarChart3, label: 'Dashboard', href: '/app/dashboard' },
+  { id: 'dashboard', icon: BarChart3, label: 'Dashboard', href: '/app/dashboard' },
 ]
 
-const BOTTOM_ITEMS: StandaloneItem[] = [
-  { icon: ShieldAlert, label: 'Vulnerability Management', href: '/app/findings'    },
-  { icon: FileText,    label: 'Reports',                  href: '/app/reports'     },
-  { icon: Sparkles,    label: 'AI Analysis',              href: '/app/ai-analysis' },
-  { icon: Users,       label: 'Team',                     href: '/app/team'        },
+const ALL_BOTTOM_ITEMS: StandaloneItem[] = [
+  { id: 'vuln-mgmt',   icon: ShieldAlert, label: 'Vulnerability Management', href: '/app/findings'    },
+  { id: 'reports',     icon: FileText,    label: 'Reports',                  href: '/app/reports'     },
+  { id: 'ai-analysis', icon: Sparkles,    label: 'AI Analysis',              href: '/app/ai-analysis' },
+  { id: 'team',        icon: Users,       label: 'Team',                     href: '/app/team'        },
 ]
 
 // ── Route → module detection ──────────────────────────────────────────
 
 function getModuleForPath(pathname: string): string | null {
-  if (
-    pathname.startsWith('/app/assets') ||
-    pathname.startsWith('/app/targets') ||
-    pathname.startsWith('/app/scans')
-  ) return 'web-security'
+  if (pathname.startsWith('/app/assets') || pathname.startsWith('/app/targets') || pathname.startsWith('/app/scans'))
+    return 'web-security'
   if (pathname.startsWith('/app/network-security')) return 'network-security'
   if (pathname.startsWith('/app/sast'))             return 'sast'
   if (pathname.startsWith('/app/cloud-security'))   return 'cloud-security'
-  // /app/findings is now standalone — no module expansion
   return null
 }
 
@@ -148,22 +146,19 @@ function StandaloneNavItem({ item, pathname }: { item: StandaloneItem; pathname:
 function ModuleSection({
   module, pathname, isOpen, onToggle,
 }: {
-  module: NavModule
-  pathname: string
-  isOpen: boolean
-  onToggle: () => void
+  module:    NavModule
+  pathname:  string
+  isOpen:    boolean
+  onToggle:  () => void
 }) {
   const ModuleIcon = module.icon
   const Chevron    = isOpen ? ChevronDown : ChevronRight
-
-  // Is any item in this module active?
-  const isModuleActive = module.items.some(
-    (item) => pathname === item.href || (item.href !== module.href && pathname.startsWith(item.href + '/')),
-  ) || pathname.startsWith(module.href + '/')
+  const isModuleActive =
+    module.items.some((i) => pathname === i.href || (i.href !== module.href && pathname.startsWith(i.href + '/'))) ||
+    pathname.startsWith(module.href + '/')
 
   return (
     <div className="mb-1">
-      {/* Module header */}
       <button
         onClick={onToggle}
         className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -182,24 +177,21 @@ function ModuleSection({
         <Chevron className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
       </button>
 
-      {/* Module items — shown when expanded */}
       {isOpen && (
         <div className="ml-3 pl-3 border-l border-foreground/10 mt-0.5 mb-1">
           {module.items.map((item) => {
             const Icon     = item.icon
             const isActive = !module.comingSoon && (pathname === item.href || pathname.startsWith(item.href + '/'))
-
             if (module.comingSoon) {
               return (
                 <Link key={item.label} href={module.href}>
-                  <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-foreground/5 transition-colors cursor-pointer group">
+                  <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-foreground/5 transition-colors cursor-pointer">
                     <Icon className="w-3.5 h-3.5 shrink-0" />
                     <span>{item.label}</span>
                   </div>
                 </Link>
               )
             }
-
             return (
               <SidebarMenuItem key={item.href}>
                 <SidebarMenuButton
@@ -225,27 +217,43 @@ function ModuleSection({
   )
 }
 
+// ── Role badge ────────────────────────────────────────────────────────
+
+function RoleBadge({ orgRole }: { orgRole: string }) {
+  const colors: Record<string, string> = {
+    admin:  'bg-primary/15 text-primary',
+    editor: 'bg-blue-500/15 text-blue-400',
+    viewer: 'bg-foreground/10 text-muted-foreground',
+  }
+  return (
+    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded capitalize ${colors[orgRole] ?? colors.viewer}`}>
+      {orgRole}
+    </span>
+  )
+}
+
 // ── Main sidebar ──────────────────────────────────────────────────────
 
 export function AppSidebar() {
-  const pathname = usePathname()
-  const router   = useRouter()
-  const { user, logout } = useAuth()
+  const pathname          = usePathname()
+  const router            = useRouter()
+  const { user, logout }  = useAuth()
 
-  // Open the module containing the current route by default
+  const orgRole         = user?.orgRole ?? 'viewer'
+  const visibleModIds   = ROLE_VISIBLE_MODULES[orgRole] ?? []
+  const visibleBottomIds = ROLE_VISIBLE_BOTTOM[orgRole] ?? []
+
+  const visibleModules     = ALL_MODULES.filter((m) => visibleModIds.includes(m.id))
+  const visibleBottomItems = ALL_BOTTOM_ITEMS.filter((i) => visibleBottomIds.includes(i.id))
+
   const [openModule, setOpenModule] = useState<string | null>(
-    () => getModuleForPath(pathname) ?? 'web-security',
+    () => getModuleForPath(pathname) ?? (visibleModules[0]?.id ?? null),
   )
 
-  // Auto-expand when navigating into a module from outside
   useEffect(() => {
     const mod = getModuleForPath(pathname)
     if (mod && mod !== openModule) setOpenModule(mod)
   }, [pathname]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  function handleModuleToggle(id: string) {
-    setOpenModule((prev) => (prev === id ? null : id))
-  }
 
   const handleLogout = async () => {
     await logout()
@@ -272,57 +280,67 @@ export function AppSidebar() {
       <SidebarContent className="px-2 py-3 overflow-y-auto">
         <SidebarMenu>
 
-          {/* Standalone top items (Dashboard) */}
+          {/* Dashboard */}
           {TOP_ITEMS.map((item) => (
             <StandaloneNavItem key={item.href} item={item} pathname={pathname} />
           ))}
 
-          {/* Divider */}
-          <div className="my-2 border-t border-foreground/8" />
+          {/* Security modules (filtered by role) */}
+          {visibleModules.length > 0 && (
+            <>
+              <div className="my-2 border-t border-foreground/8" />
+              <div className="mb-1 px-3">
+                <p className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest">
+                  Security Modules
+                </p>
+              </div>
+              {visibleModules.map((module) => (
+                <ModuleSection
+                  key={module.id}
+                  module={module}
+                  pathname={pathname}
+                  isOpen={openModule === module.id}
+                  onToggle={() => setOpenModule((p) => (p === module.id ? null : module.id))}
+                />
+              ))}
+            </>
+          )}
 
-          {/* Security modules */}
-          <div className="mb-1 px-3">
-            <p className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest">
-              Security Modules
-            </p>
-          </div>
-
-          {MODULES.map((module) => (
-            <ModuleSection
-              key={module.id}
-              module={module}
-              pathname={pathname}
-              isOpen={openModule === module.id}
-              onToggle={() => handleModuleToggle(module.id)}
-            />
-          ))}
-
-          {/* Divider */}
-          <div className="my-2 border-t border-foreground/8" />
-
-          {/* Standalone bottom items */}
-          {BOTTOM_ITEMS.map((item) => (
-            <StandaloneNavItem key={item.href} item={item} pathname={pathname} />
-          ))}
+          {/* Bottom standalone items (filtered by role) */}
+          {visibleBottomItems.length > 0 && (
+            <>
+              <div className="my-2 border-t border-foreground/8" />
+              {visibleBottomItems.map((item) => (
+                <StandaloneNavItem key={item.href} item={item} pathname={pathname} />
+              ))}
+            </>
+          )}
 
         </SidebarMenu>
       </SidebarContent>
 
       {/* Footer */}
       <SidebarFooter className="border-t border-foreground/10 p-3 space-y-2">
-        <Link href="/app/settings" className="w-full">
-          <Button
-            variant="ghost"
-            className="w-full justify-start h-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/5 text-sm"
-          >
-            <Settings className="w-4 h-4 mr-2" />
-            Settings
-          </Button>
-        </Link>
+        {/* Settings — admin only */}
+        {orgRole === 'admin' && (
+          <Link href="/app/settings" className="w-full">
+            <Button
+              variant="ghost"
+              className="w-full justify-start h-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/5 text-sm"
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Settings
+            </Button>
+          </Link>
+        )}
 
+        {/* User info */}
         {user && (
           <div className="px-3 py-2.5 bg-foreground/5 rounded-lg">
-            <p className="text-xs font-medium text-foreground truncate">{user.name}</p>
+            <div className="flex items-center justify-between gap-2 mb-0.5">
+              <p className="text-xs font-medium text-foreground truncate">{user.name}</p>
+              <RoleBadge orgRole={orgRole} />
+            </div>
             <p className="text-[11px] text-muted-foreground truncate">{user.email}</p>
           </div>
         )}

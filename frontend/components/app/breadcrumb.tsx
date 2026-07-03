@@ -32,6 +32,8 @@ const ROUTE_MAP: Record<string, Crumb> = {
   '/app/team':                            { label: 'Team' },
   '/app/settings':                        { label: 'Settings' },
   '/app/debug':                           { label: 'Debug' },
+  '/app/invite/accept':                   { label: 'Accept Invitation' },
+  '/app/403':                             { label: 'Access Denied' },
 }
 
 function getBasePath(pathname: string): string {
