@@ -1,4 +1,5 @@
 import { API_BASE } from './api'
+import { authedFetch } from './api-auth'
 
 export type ScheduleInterval = 'once' | 'daily' | 'weekly' | 'monthly'
 
@@ -36,13 +37,13 @@ export interface ScheduleUpdateBody {
 const SCHED_BASE = `${API_BASE}/network/schedules`
 
 export async function listSchedules(userId: string): Promise<NetworkSchedule[]> {
-  const res = await fetch(`${SCHED_BASE}?userId=${encodeURIComponent(userId)}`)
+  const res = await authedFetch(`${SCHED_BASE}?userId=${encodeURIComponent(userId)}`)
   if (!res.ok) throw new Error(`Failed to list schedules: ${res.status}`)
   return res.json()
 }
 
 export async function createSchedule(body: ScheduleCreateBody): Promise<NetworkSchedule> {
-  const res = await fetch(SCHED_BASE, {
+  const res = await authedFetch(SCHED_BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -58,7 +59,7 @@ export async function updateSchedule(
   scheduleId: string,
   body: ScheduleUpdateBody,
 ): Promise<NetworkSchedule> {
-  const res = await fetch(`${SCHED_BASE}/${scheduleId}`, {
+  const res = await authedFetch(`${SCHED_BASE}/${scheduleId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -68,12 +69,12 @@ export async function updateSchedule(
 }
 
 export async function deleteSchedule(scheduleId: string): Promise<void> {
-  const res = await fetch(`${SCHED_BASE}/${scheduleId}`, { method: 'DELETE' })
+  const res = await authedFetch(`${SCHED_BASE}/${scheduleId}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`Delete schedule failed: ${res.status}`)
 }
 
 export async function triggerSchedule(scheduleId: string): Promise<{ success: boolean; scanId: string }> {
-  const res = await fetch(`${SCHED_BASE}/${scheduleId}/trigger`, { method: 'POST' })
+  const res = await authedFetch(`${SCHED_BASE}/${scheduleId}/trigger`, { method: 'POST' })
   if (!res.ok) throw new Error(`Trigger schedule failed: ${res.status}`)
   return res.json()
 }

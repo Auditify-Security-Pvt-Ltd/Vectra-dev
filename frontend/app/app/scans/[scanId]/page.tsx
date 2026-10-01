@@ -87,9 +87,9 @@ interface FullStep {
 const FULL_STEPS: FullStep[] = [
   { displayKey: 'discovering_assets',     label: 'Asset Discovery',          icon: Network,     stageKey: 'discovering_assets' },
   { displayKey: 'validating_assets',      label: 'Technology Detection',     icon: Cpu,         stageKey: 'validating_assets' },
-  { displayKey: 'engine_nuclei',          label: 'Nuclei Scanner',           icon: Bug,         stageKey: 'scanning_assets', engineKey: 'nuclei',        isParallel: true },
+  { displayKey: 'engine_nuclei',          label: 'Core Security Scan',       icon: Bug,         stageKey: 'scanning_assets', engineKey: 'nuclei',        isParallel: true },
   { displayKey: 'engine_vectra',          label: 'Vectra Security Checks',   icon: ShieldCheck, stageKey: 'scanning_assets', engineKey: 'vectra_checks', isParallel: true },
-  { displayKey: 'engine_wpscan',          label: 'WPScan',                   icon: Globe,       stageKey: 'scanning_assets', engineKey: 'wpscan',        isParallel: true },
+  { displayKey: 'engine_wpscan',          label: 'CMS Scan',                 icon: Globe,       stageKey: 'scanning_assets', engineKey: 'wpscan',        isParallel: true },
   { displayKey: 'engine_cve',             label: 'CVE Analysis',             icon: ShieldAlert, stageKey: 'scanning_assets', engineKey: 'cve_analysis',  isParallel: true },
   { displayKey: 'completed',              label: 'Completed',                icon: CheckCircle2, stageKey: 'completed' },
 ]
@@ -111,7 +111,7 @@ export default function ScanDetailPage() {
 
   useEffect(() => {
     if (!user) return
-    getFirestoreScan(user.uid, scanId).then((s) => {
+    getFirestoreScan(user.organizationId, scanId).then((s) => {
       if (s) setScan(s)
       else setNotFound(true)
     })
@@ -181,18 +181,18 @@ export default function ScanDetailPage() {
           const state = await getScanStatus(scanId)
           const updates = { status: state.status, currentStep: state.currentStep }
           setScan((prev) => (prev ? { ...prev, ...updates } : prev))
-          await updateFirestoreScan(user.uid, scanId, updates).catch(() => {})
+          await updateFirestoreScan(user.organizationId, scanId, updates).catch(() => {})
         } catch {
           const updates: Partial<FirestoreScan> = { status: 'cancelled', currentStep: 'Cancelled' }
           setScan((prev) => (prev ? { ...prev, ...updates } : prev))
-          await updateFirestoreScan(user.uid, scanId, updates).catch(() => {})
+          await updateFirestoreScan(user.organizationId, scanId, updates).catch(() => {})
         }
         return
       }
 
       const updates: Partial<FirestoreScan> = { status: 'cancelled', currentStep: 'Cancelled' }
       setScan((prev) => (prev ? { ...prev, ...updates } : prev))
-      await updateFirestoreScan(user.uid, scanId, updates)
+      await updateFirestoreScan(user.organizationId, scanId, updates)
       toast.success('Scan stopped')
     } catch (err) {
       toast.error('Failed to stop scan', { description: err instanceof Error ? err.message : undefined })
@@ -206,7 +206,7 @@ export default function ScanDetailPage() {
     setActionLoading(true)
     try {
       const result = await restartScan(scanId)
-      await createFirestoreScan(user.uid, {
+      await createFirestoreScan(user.organizationId, {
         scanId:        result.scanId,
         target:        scan.target,
         scanType:      scan.scanType,

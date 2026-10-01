@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -294,6 +295,7 @@ export default function TargetsPage() {
         <DialogContent className="sm:max-w-md bg-card border-foreground/10">
           <DialogHeader>
             <DialogTitle>{editTarget ? 'Edit Target' : 'Add Target'}</DialogTitle>
+            <DialogDescription>Save a domain, URL or IP address to scan later.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">

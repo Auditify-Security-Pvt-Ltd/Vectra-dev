@@ -6,8 +6,8 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/context/auth-context'
+import { isPlatformAdmin } from '@/lib/rbac'
 
-const ADMIN_ROLES = ['super_admin', 'platform_admin']
 
 export default function LoginPage() {
   const router = useRouter()
@@ -24,7 +24,7 @@ export default function LoginPage() {
 
     try {
       const { role } = await login(email, password)
-      if (ADMIN_ROLES.includes(role)) {
+      if (isPlatformAdmin(role)) {
         router.push('/admin/dashboard')
       } else {
         router.push('/app/dashboard')

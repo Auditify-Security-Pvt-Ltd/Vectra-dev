@@ -21,12 +21,14 @@ import {
   setDoc,
   updateDoc,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
 import type { OrgRole } from '@/lib/rbac'
 import { platformRoleToOrgRole } from '@/lib/rbac'
 import { createOrg, addMember, getMember } from '@/lib/firestore-team'
 import { registerOrg } from '@/lib/api-team'
+import { validateOrganization, type OrganizationInput } from '@/lib/org-validation'
 
 export type UserRole =
   | 'customer'
@@ -51,7 +53,12 @@ interface AuthContextValue {
   orgRole:       OrgRole | null
   loading:       boolean
   login:         (email: string, password: string) => Promise<{ role: UserRole }>
-  register:      (name: string, email: string, password: string) => Promise<void>
+  /**
+   * `organization` given → new customer: creates the organization and makes the
+   * user its owner. `null` → invited user: creates the account only; the
+   * invitation then adds them to the existing organization.
+   */
+  register:      (name: string, email: string, password: string, organization: OrganizationInput | null) => Promise<void>
   logout:        () => Promise<void>
   resetPassword: (email: string) => Promise<void>
   refreshUser:   () => Promise<void>
@@ -59,8 +66,15 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-async function resolveOrgRole(uid: string, organizationId: string, platformRole: UserRole): Promise<OrgRole> {
-  // Owner of their own workspace is always admin
+async function resolveOrgRole(
+  uid: string,
+  organizationId: string,
+  platformRole: UserRole,
+  hasOrganization: boolean,
+): Promise<OrgRole> {
+  // Owner of their own workspace is always admin. An account that has not joined
+  // any organization yet (invite pending) gets no implicit ownership.
+  if (!hasOrganization) return 'viewer'
   if (organizationId === uid) return 'admin'
   try {
     const member = await getMember(organizationId, uid)
@@ -77,7 +91,7 @@ async function fetchUserDoc(firebaseUser: FirebaseUser): Promise<AuthUser | null
     if (!snap.exists()) return null
     const d = snap.data()
     const orgId   = d.organizationId ?? firebaseUser.uid
-    const orgRole = await resolveOrgRole(firebaseUser.uid, orgId, d.role as UserRole)
+    const orgRole = await resolveOrgRole(firebaseUser.uid, orgId, d.role as UserRole, !!d.organizationId)
     return {
       uid:            firebaseUser.uid,
       email:          d.email,
@@ -92,8 +106,16 @@ async function fetchUserDoc(firebaseUser: FirebaseUser): Promise<AuthUser | null
   }
 }
 
+/**
+ * Repair for legacy accounts whose own-workspace organization document is
+ * missing. Runs only when the user record itself says they own a workspace
+ * (organizationId === uid), so invited members never get a duplicate org.
+ */
 async function ensureOrgExists(uid: string, name: string, email: string): Promise<void> {
   try {
+    const snap = await getDoc(doc(db, 'users', uid))
+    if (!snap.exists() || snap.data().organizationId !== uid) return
+
     const { getOrg } = await import('@/lib/firestore-team')
     const existing = await getOrg(uid)
     if (existing) return
@@ -147,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const d      = snap.data()
     const orgId  = d.organizationId ?? cred.user.uid
-    const orgRole = await resolveOrgRole(cred.user.uid, orgId, d.role as UserRole)
+    const orgRole = await resolveOrgRole(cred.user.uid, orgId, d.role as UserRole, !!d.organizationId)
 
     const appUser: AuthUser = {
       uid:            cred.user.uid,
@@ -164,30 +186,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { role: appUser.role }
   }
 
-  const register = async (name: string, email: string, password: string): Promise<void> => {
+  const register = async (
+    name: string,
+    email: string,
+    password: string,
+    organization: OrganizationInput | null,
+  ): Promise<void> => {
+    // Validate before creating the Firebase account, so bad input never leaves
+    // behind an account without an organization.
+    let org: OrganizationInput | null = null
+    if (organization) {
+      const checked = validateOrganization(organization)
+      if (checked.errors) throw new Error(Object.values(checked.errors)[0])
+      org = checked.value
+    }
+
     const cred = await createUserWithEmailAndPassword(auth, email, password)
-    const userData = {
-      uid:            cred.user.uid,
-      name,
-      email,
-      role:           'team_admin' as UserRole,  // every new user is admin of their own workspace
+    const uid  = cred.user.uid
+
+    if (!org) {
+      // Invited user: account only. Plan and quota come from the organization
+      // they join, never from the user.
+      await setDoc(doc(db, 'users', uid), {
+        uid, name, email,
+        role:      'customer' as UserRole,   // replaced when the invitation is accepted
+        status:    'active',
+        createdAt: serverTimestamp(),
+        lastLogin: serverTimestamp(),
+      })
+      setUser({ uid, name, email, role: 'customer', orgRole: 'viewer', status: 'active', organizationId: uid })
+      return
+    }
+
+    // New customer: user, organization and owner membership are written
+    // atomically. The organization id is the owner's uid, which is what scopes
+    // the users/{orgId}/… data tree. Plan and quota fields are intentionally
+    // absent — the backend treats that as the default plan.
+    const batch = writeBatch(db)
+    batch.set(doc(db, 'users', uid), {
+      uid, name, email,
+      role:           'team_admin' as UserRole,
       status:         'active',
-      organizationId: cred.user.uid,             // own workspace
+      organizationId: uid,
       createdAt:      serverTimestamp(),
       lastLogin:      serverTimestamp(),
-    }
-    await setDoc(doc(db, 'users', cred.user.uid), userData)
-
-    const orgName = `${name}'s Workspace`
-    await createOrg({ orgId: cred.user.uid, ownerId: cred.user.uid, ownerName: name, ownerEmail: email, name: orgName, createdAt: '' as any })
-    await addMember(cred.user.uid, {
-      userId: cred.user.uid, name, email, orgRole: 'admin', status: 'active', joinedAt: '' as any,
     })
-    await registerOrg(cred.user.uid, cred.user.uid, orgName).catch(() => {})
+    batch.set(doc(db, 'organizations', uid), {
+      orgId:      uid,
+      ownerId:    uid,
+      ownerName:  name,
+      ownerEmail: email,
+      name:       org.name,
+      website:    org.website,
+      phone:      org.phone,
+      createdAt:  serverTimestamp(),
+    })
+    batch.set(doc(db, 'organizations', uid, 'members', uid), {
+      userId: uid, name, email, orgRole: 'admin', status: 'active', joinedAt: serverTimestamp(),
+    })
+    await batch.commit()
+    await registerOrg(uid, uid, org.name).catch(() => {})
 
     setUser({
-      uid: cred.user.uid, name, email, role: 'team_admin', orgRole: 'admin',
-      status: 'active', organizationId: cred.user.uid,
+      uid, name, email, role: 'team_admin', orgRole: 'admin',
+      status: 'active', organizationId: uid,
     })
   }
 

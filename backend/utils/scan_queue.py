@@ -17,7 +17,7 @@ FIX: Track live worker slots using the _tasks dict, not status strings.
 ═══════════════════════════════════════════════════════════════════════════════
 
 Tunable via environment variables:
-  MAX_CONCURRENT_SCANS_PER_USER   default: 2
+  MAX_CONCURRENT_SCANS_PER_USER   default: 1  (one active scan per user; the rest wait)
   MAX_NETWORK_WORKERS             default: 5  (global cap across all users)
   QUICK_SCAN_TIMEOUT_SECS         default: 900   (15 min)
   FULL_SCAN_TIMEOUT_SECS          default: 1800  (30 min)
@@ -34,7 +34,7 @@ from typing import Awaitable, Callable, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # ── Configurable defaults ────────────────────────────────────────────────────
-MAX_CONCURRENT_SCANS_PER_USER = int(os.getenv("MAX_CONCURRENT_SCANS_PER_USER", "2"))
+MAX_CONCURRENT_SCANS_PER_USER = int(os.getenv("MAX_CONCURRENT_SCANS_PER_USER", "1"))
 MAX_NETWORK_WORKERS           = int(os.getenv("MAX_NETWORK_WORKERS",            "5"))
 QUICK_SCAN_TIMEOUT_SECS       = int(os.getenv("QUICK_SCAN_TIMEOUT_SECS",        str(15 * 60)))
 FULL_SCAN_TIMEOUT_SECS        = int(os.getenv("FULL_SCAN_TIMEOUT_SECS",         str(30 * 60)))
@@ -75,7 +75,7 @@ class UserScanQueue:
         q = self._queues.setdefault(user_id, [])
         q.append((scan_id, target, profile, time.monotonic()))
         logger.info(
-            f"[QUEUE] Scan {scan_id} enqueued for user={user_id} "
+            f"[QUEUE] SCAN_QUEUED scan={scan_id} user={user_id} "
             f"target={target} profile={profile} | queue depth={len(q)}"
         )
 
@@ -103,6 +103,24 @@ class UserScanQueue:
             return
         async with lock:
             await self._do_start_next(user_id, runner)
+
+    async def wake(
+        self,
+        freed_by: Optional[str],
+        runner: Callable[[str, str, str], Awaitable[None]],
+    ) -> None:
+        """
+        A worker slot was freed. The freeing user's next scan goes first, then
+        other users oldest-waiting first — a user held back only by the global
+        cap must not stay queued just because the slot was someone else's.
+        """
+        waiting = [(q[0][3], uid) for uid, q in self._queues.items() if q and uid != freed_by]
+        order = ([freed_by] if freed_by and self._queues.get(freed_by) else []) + [uid for _, uid in sorted(waiting)]
+        logger.info(f"[QUEUE] SCAN_SCHEDULER_WAKE freed_by={freed_by} users_waiting={len(order)}")
+        for uid in order:
+            if self._count_running_globally() >= MAX_NETWORK_WORKERS:
+                break
+            await self.try_start_next(uid, runner)
 
     def stale_scans(self) -> List[Tuple[str, str, float]]:
         """
@@ -141,14 +159,14 @@ class UserScanQueue:
 
             if user_slots >= MAX_CONCURRENT_SCANS_PER_USER:
                 logger.info(
-                    f"[QUEUE] User {user_id} at capacity "
+                    f"[QUEUE] SCAN_SKIPPED_USER_ACTIVE user={user_id} at capacity "
                     f"({user_slots}/{MAX_CONCURRENT_SCANS_PER_USER} slots) — will retry later"
                 )
                 break
 
             if global_slots >= MAX_NETWORK_WORKERS:
                 logger.info(
-                    f"[QUEUE] Global worker limit reached "
+                    f"[QUEUE] SCAN_SKIPPED_GLOBAL_CAP user={user_id} global worker limit reached "
                     f"({global_slots}/{MAX_NETWORK_WORKERS}) — will retry later"
                 )
                 break
@@ -159,13 +177,13 @@ class UserScanQueue:
             status = self._scans.get(scan_id, {}).get("status")
             if status != "queued":
                 logger.info(
-                    f"[QUEUE] Skipping scan {scan_id} — status is '{status}' (expected 'queued')"
+                    f"[QUEUE] SCAN_SKIPPED_NOT_QUEUED scan={scan_id} status={status}"
                 )
                 continue
 
             wait_secs = int(time.monotonic() - enqueue_t)
             logger.info(
-                f"[WORKER] Starting scan {scan_id} after {wait_secs}s wait | "
+                f"[WORKER] SCAN_CLAIMED scan={scan_id} user={user_id} after {wait_secs}s wait | "
                 f"user slots: {user_slots+1}/{MAX_CONCURRENT_SCANS_PER_USER} | "
                 f"global: {global_slots+1}/{MAX_NETWORK_WORKERS}"
             )
@@ -215,8 +233,8 @@ class UserScanQueue:
             # so the freed slot is visible to the next _count_running_* call.
             self._tasks.pop(scan_id, None)
             logger.info(
-                f"[WORKER] Worker released for scan {scan_id} | "
+                f"[WORKER] SCAN_SLOT_RELEASED scan={scan_id} user={user_id} "
+                f"status={self._scans.get(scan_id, {}).get('status')} | "
                 f"global running: {self._count_running_globally()}/{MAX_NETWORK_WORKERS}"
             )
-            # Fire-and-forget: start next queued scan for this user
-            asyncio.create_task(self.try_start_next(user_id, runner))
+            asyncio.create_task(self.wake(user_id, runner))

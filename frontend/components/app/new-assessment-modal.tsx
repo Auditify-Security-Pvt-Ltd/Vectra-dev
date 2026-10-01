@@ -8,12 +8,14 @@ import {
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { startScan, type ScanProfile } from '@/lib/api'
 import { startNetworkScan, type NetworkScanProfile } from '@/lib/api-network'
 import { createFirestoreScan } from '@/lib/firestore-scans'
 import { createNetworkScan } from '@/lib/firestore-network-scans'
 import { useAuth } from '@/context/auth-context'
+import { ScanLimitReachedError } from '@/lib/api-auth'
+import { OrgScanUsageInline } from '@/components/app/org-scan-usage'
 
 type Step = 'select' | 'web' | 'network'
 type ScanType = 'DAST' | 'SAST'
@@ -89,7 +91,7 @@ export function NewAssessmentModal({ open, onOpenChange }: Props) {
       const { scanId } = result
       const profile = WEB_PROFILES.find((p) => p.value === scanProfile)!
 
-      await createFirestoreScan(user.uid, {
+      await createFirestoreScan(user.organizationId, {
         scanId,
         target: url,
         scanType,
@@ -111,6 +113,14 @@ export function NewAssessmentModal({ open, onOpenChange }: Props) {
       router.push(`/app/scans/${scanId}`)
     } catch (err) {
       setWebLoading(false)
+      if (err instanceof ScanLimitReachedError) {
+        toast.error('Organization scan limit reached', {
+          description: err.quota
+            ? `Your organization has used ${err.quota.used} of ${err.quota.effectiveAllowance} scans. Contact a Vectra administrator for more.`
+            : err.message,
+        })
+        return
+      }
       toast.error('Failed to start scan', { description: err instanceof Error ? err.message : 'Unknown error' })
     }
   }
@@ -126,7 +136,7 @@ export function NewAssessmentModal({ open, onOpenChange }: Props) {
       const scanId = resp.scanId
       const now   = new Date().toISOString()
 
-      await createNetworkScan(user.uid, {
+      await createNetworkScan(user.organizationId, {
         scanId,
         target: netTarget.trim(),
         scanProfile: netProfile,
@@ -153,7 +163,15 @@ export function NewAssessmentModal({ open, onOpenChange }: Props) {
       toast.success('Network scan started')
       router.push(`/app/network-security/scans/${scanId}`)
     } catch (err: unknown) {
-      setNetError(err instanceof Error ? err.message : 'Failed to start scan')
+      if (err instanceof ScanLimitReachedError) {
+        setNetError(
+          err.quota
+            ? `Your organization has reached its scan limit — ${err.quota.used} of ${err.quota.effectiveAllowance} scans used. Contact a Vectra administrator for more.`
+            : err.message,
+        )
+      } else {
+        setNetError(err instanceof Error ? err.message : 'Failed to start scan')
+      }
     } finally {
       setNetLoading(false)
     }
@@ -172,7 +190,8 @@ export function NewAssessmentModal({ open, onOpenChange }: Props) {
           <>
             <DialogHeader className="pb-1">
               <DialogTitle className="text-xl font-bold">New Security Assessment</DialogTitle>
-              <p className="text-sm text-muted-foreground">Select the security module you want to scan.</p>
+              <DialogDescription>Select the security module you want to scan.</DialogDescription>
+              <OrgScanUsageInline refreshKey={open} />
             </DialogHeader>
 
             <div className="grid grid-cols-2 gap-4 py-4">
@@ -221,6 +240,7 @@ export function NewAssessmentModal({ open, onOpenChange }: Props) {
                 </button>
                 <DialogTitle className="text-xl font-bold">Web Security Scan</DialogTitle>
               </div>
+              <DialogDescription>Scan a website or web application for vulnerabilities.</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-5 pt-2">
@@ -324,6 +344,7 @@ export function NewAssessmentModal({ open, onOpenChange }: Props) {
                 </button>
                 <DialogTitle className="text-xl font-bold">Network Security Scan</DialogTitle>
               </div>
+              <DialogDescription>Scan a host, IP address or range for exposed services and vulnerabilities.</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 pt-2">

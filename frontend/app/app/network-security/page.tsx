@@ -14,6 +14,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
 import { useAuth } from '@/context/auth-context'
+import { TableSkeleton } from '@/components/app/loading-states'
+import { useDelayedLoading } from '@/hooks/use-loading'
 import {
   listenToNetworkScans,
   createNetworkScan,
@@ -27,6 +29,7 @@ import {
 } from '@/lib/api-network'
 import { listenToNetworkHosts, type FirestoreNetworkHost } from '@/lib/firestore-network-assets'
 import { listenToNetworkFindings, type FirestoreNetworkFinding } from '@/lib/firestore-network-findings'
+import { OrgScanUsageInline } from '@/components/app/org-scan-usage'
 
 // ── Status maps ───────────────────────────────────────────────────────
 
@@ -155,6 +158,8 @@ function NewNetworkScanModal({
             </div>
           </div>
 
+          <OrgScanUsageInline refreshKey={errMsg} />
+
           {errMsg && (
             <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">{errMsg}</div>
           )}
@@ -191,10 +196,11 @@ export default function NetworkSecurityPage() {
   const [search,    setSearch]   = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [stopping,  setStopping] = useState<string | null>(null)
+  const [scansLoading, setScansLoading] = useState(true)
 
   useEffect(() => {
     if (!user) return
-    const unsubScans    = listenToNetworkScans(user.organizationId, setScans)
+    const unsubScans    = listenToNetworkScans(user.organizationId, (v) => { setScans(v); setScansLoading(false) })
     const unsubHosts    = listenToNetworkHosts(user.organizationId, setHosts)
     const unsubFindings = listenToNetworkFindings(user.organizationId, setFindings)
     return () => { unsubScans(); unsubHosts(); unsubFindings() }
@@ -224,6 +230,8 @@ export default function NetworkSecurityPage() {
       setStopping(null)
     }
   }
+
+  const showScansSkeleton = useDelayedLoading(scansLoading)
 
   const filtered = scans.filter((s) =>
     s.target.toLowerCase().includes(search.toLowerCase()) ||
@@ -302,7 +310,11 @@ export default function NetworkSecurityPage() {
       {/* Scan list */}
       <Card className="bg-card border-foreground/10">
         <CardContent className="p-0">
-          {filtered.length === 0 ? (
+          {showScansSkeleton ? (
+            <div className="p-4">
+              <TableSkeleton rows={5} cols={6} />
+            </div>
+          ) : scansLoading ? null : filtered.length === 0 ? (
             <div className="text-center py-16 space-y-3">
               <div className="w-12 h-12 rounded-xl bg-foreground/5 border border-foreground/10 flex items-center justify-center mx-auto">
                 <Wifi className="w-6 h-6 text-muted-foreground" />

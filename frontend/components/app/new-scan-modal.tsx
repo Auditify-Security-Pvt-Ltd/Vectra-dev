@@ -6,7 +6,7 @@ import { Globe, Code, Zap, SearchCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { startScan, type ScanProfile } from '@/lib/api'
 import { createFirestoreScan } from '@/lib/firestore-scans'
 import { useAuth } from '@/context/auth-context'
@@ -79,7 +79,7 @@ export function NewScanModal({ open, onOpenChange, defaultTarget }: Props) {
       const result = await startScan(url, scanProfile, user.uid)
       const { scanId } = result
 
-      await createFirestoreScan(user.uid, {
+      await createFirestoreScan(user.organizationId, {
         scanId,
         target: url,
         scanType,
@@ -117,6 +117,7 @@ export function NewScanModal({ open, onOpenChange, defaultTarget }: Props) {
       <DialogContent className="sm:max-w-md bg-card border-foreground/10">
         <DialogHeader>
           <DialogTitle className="text-xl font-bold">New Security Scan</DialogTitle>
+          <DialogDescription>Scan a website or web application for vulnerabilities.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5 pt-2">

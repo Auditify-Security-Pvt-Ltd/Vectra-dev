@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
 from models.scan import Finding, HealthResponse, ScanProfile, ScanRequest, Severity
@@ -17,6 +17,9 @@ from discovery.subfinder import is_subfinder_available, stream_subdomains
 from discovery.httpx_toolkit import is_httpx_toolkit_available, stream_probe_hosts
 from intelligence.nvd_client import get_cves_for_technology, parse_tech
 from checks.runner import run_checks_on_assets
+from services.auth import Identity, require_user, require_verified_user
+from services import firebase, quota
+from services.scan_guard import enforce_scan_quota, request_id_from
 from utils.logger import get_logger
 from utils.scan_queue import UserScanQueue, QUICK_SCAN_TIMEOUT_SECS, FULL_SCAN_TIMEOUT_SECS
 
@@ -673,11 +676,22 @@ async def health_check() -> HealthResponse:
 
 
 @router.post("/scan/start", status_code=status.HTTP_200_OK, tags=["Scans"])
-async def start_scan(request: ScanRequest) -> dict:
+async def start_scan(
+    request: ScanRequest,
+    http_request: Request,
+    identity: Identity = Depends(require_user),
+) -> dict:
     target   = str(request.target)
     profile  = request.scanProfile.value
-    user_id  = request.userId
-    scan_id  = _build_scan_id()
+    # Claims one scan from the caller's organization; raises 402
+    # SCAN_LIMIT_REACHED before any scan exists.
+    claim    = enforce_scan_quota(identity, request.userId, "web", _build_scan_id(),
+                                  request_id_from(http_request))
+    scan_id  = claim.scanId
+    user_id  = claim.uid
+    if claim.duplicate:
+        return {"scanId": scan_id, "status": _SCANS.get(scan_id, {}).get("status", "queued"),
+                "scanProfile": profile, "duplicate": True}
 
     _SCANS[scan_id] = _blank_scan(scan_id, target, profile, user_id)
 
@@ -686,6 +700,18 @@ async def start_scan(request: ScanRequest) -> dict:
 
     logger.info(f"[{scan_id}] Queued [{profile}] for {target} (user={user_id})")
     return {"scanId": scan_id, "status": "queued", "scanProfile": profile}
+
+
+@router.get("/quota", tags=["Scans"])
+async def get_my_quota(identity: Identity = Depends(require_verified_user)) -> dict:
+    """
+    The caller's ORGANIZATION scan allowance, shared by every member.
+    Read-only on purpose — every mutation lives behind the admin API.
+    """
+    from services.scan_guard import effective_uid
+
+    uid = effective_uid(identity, None)
+    return {"uid": uid, **quota.get_quota_for_user(uid), "rule": quota.SCAN_CONSUMPTION_RULE}
 
 
 @router.get("/scan/{scan_id}", tags=["Scans"])
@@ -738,7 +764,9 @@ async def stream_scan_events(scan_id: str) -> StreamingResponse:
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+        # no-transform stops proxies (including the Next.js /api/backend rewrite)
+        # from gzip-buffering the stream, which delivers every event only at the end.
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
 
 
@@ -753,23 +781,87 @@ async def cancel_scan(scan_id: str) -> dict:
 
     _QUEUE.remove(scan_id)
     task = _TASKS.get(scan_id)
-    if task and not task.done():
+    was_running = bool(task and not task.done())
+    if was_running:
+        # The worker's finally-block frees the user's slot and wakes the queue.
         task.cancel()
 
     _update_scan(scan_id, status="cancelled", currentStep="Cancelled")
     _append_log(scan_id, "Scan Cancelled by User")
+    logger.info(f"[{scan_id}] SCAN_CANCELLED user={_SCANS[scan_id].get('userId')} "
+                f"was={current_status} worker_cancelled={was_running}")
     return {"success": True, "scanId": scan_id, "status": "cancelled"}
 
 
+# ── Queue safety net ─────────────────────────────────────────────────
+
+_SWEEPER_TASK: Optional[asyncio.Task] = None
+_SWEEP_INTERVAL_SECS = 30
+
+
+async def sweep_queue() -> None:
+    """
+    Backstop for the event-driven wake-up in UserScanQueue: re-evaluates scans
+    queued longer than STALE_SCAN_SECS, and fails scans whose worker vanished
+    so they stop holding the UI in an active state.
+    """
+    stale = _QUEUE.stale_scans()
+    for scan_id, user_id, wait_secs in stale:
+        logger.warning(f"[SWEEPER] scan {scan_id} (user={user_id}) queued {wait_secs:.0f}s — re-evaluating")
+    if stale:
+        await _QUEUE.wake(None, _execute_scan)
+
+    for scan_id, scan in list(_SCANS.items()):
+        if scan["status"] in _TERMINAL or scan["status"] == "queued" or scan_id in _TASKS:
+            continue
+        logger.error(f"[{scan_id}] SCAN_FAILED status={scan['status']} but no live worker — marking failed")
+        _update_scan(scan_id, status="failed", currentStep="Failed",
+                     error="Scan worker stopped unexpectedly")
+        _append_log(scan_id, "Error: scan worker stopped unexpectedly")
+
+
+async def _sweeper_loop() -> None:
+    while True:
+        await asyncio.sleep(_SWEEP_INTERVAL_SECS)
+        try:
+            await sweep_queue()
+        except Exception as exc:
+            logger.error(f"[SWEEPER] web queue sweep failed: {exc}", exc_info=True)
+
+
+def start_queue_sweeper() -> None:
+    global _SWEEPER_TASK
+    if _SWEEPER_TASK is None or _SWEEPER_TASK.done():
+        _SWEEPER_TASK = asyncio.create_task(_sweeper_loop())
+
+
 @router.post("/scan/{scan_id}/restart", tags=["Scans"])
-async def restart_scan(scan_id: str) -> dict:
+async def restart_scan(
+    scan_id: str,
+    http_request: Request,
+    identity: Identity = Depends(require_user),
+) -> dict:
     if scan_id not in _SCANS:
         raise HTTPException(status_code=404, detail="Original scan not found")
 
     target   = _SCANS[scan_id]["target"]
     profile  = _SCANS[scan_id].get("scanProfile", "FULL_SCAN")
-    user_id  = _SCANS[scan_id].get("userId", "anonymous")
-    new_id   = _build_scan_id()
+    original_owner = _SCANS[scan_id].get("userId", "anonymous")
+
+    # A restart is a new scan: it must be authenticated, belong to the caller's
+    # organization, and consume that organization's quota like any other.
+    if firebase.is_configured() and identity.verified:
+        caller_org = quota.resolve_org_id(identity.uid)
+        if not caller_org or quota.resolve_org_id(original_owner) != caller_org:
+            raise HTTPException(status_code=404, detail="Original scan not found")
+
+    claim    = enforce_scan_quota(identity, original_owner, "web", _build_scan_id(),
+                                  request_id_from(http_request))
+    new_id   = claim.scanId
+    user_id  = claim.uid
+    if claim.duplicate:
+        return {"scanId": new_id, "status": _SCANS.get(new_id, {}).get("status", "queued"),
+                "scanProfile": profile, "originalScanId": scan_id, "duplicate": True}
 
     _SCANS[new_id] = _blank_scan(new_id, target, profile, user_id)
     _SCANS[new_id]["logs"][0]["message"] = f"Scan Queued (Restarted — {_PROFILE_LABELS.get(profile, profile)})"

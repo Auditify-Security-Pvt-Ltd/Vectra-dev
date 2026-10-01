@@ -16,7 +16,7 @@ if _env_file.exists():
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.scans import router as scans_router
+from api.scans import router as scans_router, start_queue_sweeper as start_web_queue_sweeper
 from api.assets import router as assets_router
 from api.cves import router as cves_router
 from api.debug import router as debug_router
@@ -25,6 +25,8 @@ from api.network_schedules import router as schedules_router, start_scheduler
 from api.sast_scans import router as sast_router
 from api.sast_oauth import router as sast_oauth_router
 from api.team import router as team_router
+from api.admin import router as admin_router
+from api.cloud import router as cloud_router
 from utils.logger import get_logger
 
 # Root logger config — applied before any module imports log anything.
@@ -61,10 +63,13 @@ app.include_router(schedules_router)
 app.include_router(sast_router)
 app.include_router(sast_oauth_router)
 app.include_router(team_router)
+app.include_router(admin_router)
+app.include_router(cloud_router)
 
 
 @app.on_event("startup")
 async def on_startup() -> None:
     start_scan_sweeper()
+    start_web_queue_sweeper()
     start_scheduler()
     logger.info("Vectra backend started — docs at /docs")

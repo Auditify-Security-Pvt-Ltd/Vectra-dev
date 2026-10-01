@@ -14,6 +14,23 @@ import type { FirestoreNetworkHost }     from './firestore-network-assets'
 import type { FirestoreNetworkFinding }  from './firestore-network-findings'
 import type { FirestoreNetworkCve }      from './firestore-network-cves'
 import type { FirestoreNetworkTimeline } from './firestore-network-timeline'
+import type { FirestoreSastScan }        from './firestore-sast-scans'
+import type { FirestoreSastFinding }     from './firestore-sast-findings'
+import type { CloudAsset, CloudFinding, CloudIntegration } from './api-cloud'
+import { providerLabel } from './api-cloud'
+import {
+  ReportDoc,
+  drawCover,
+  truncUrl,
+  severityCounts,
+  overallRisk as computeOverallRisk,
+  SEV_FILL,
+  SEV_TEXT,
+  SEV_ORDER,
+  COLOR,
+  SPACE,
+  type Rgb,
+} from './pdf-layout'
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -39,26 +56,11 @@ export interface ReportTarget {
 
 // ── Constants ─────────────────────────────────────────────────────────
 
-const SEV_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4, unknown: 5 }
+// Severity ordering, fills and text colours are owned by the layout engine
+// (lib/pdf-layout.ts) so every report renders severities identically.
 
 const CVSS_SCORE: Record<string, number> = { critical: 9.1, high: 7.5, medium: 5.3, low: 3.1, info: 0.0, unknown: 0.0 }
 const RISK_SCORE: Record<string, number> = { critical: 92, high: 74, medium: 51, low: 24, info: 8, unknown: 0 }
-
-// Severity fill / text RGB for PDF cells
-const SEV_FILL: Record<string, [number, number, number]> = {
-  critical: [254, 226, 226],
-  high:     [255, 237, 213],
-  medium:   [254, 249, 195],
-  low:      [219, 234, 254],
-  info:     [243, 244, 246],
-}
-const SEV_TEXT: Record<string, [number, number, number]> = {
-  critical: [185, 28, 28],
-  high:     [154, 52, 18],
-  medium:   [133, 77, 14],
-  low:      [29, 78, 216],
-  info:     [75, 85, 99],
-}
 
 // Key remediation per template (for Excel recommendations sheet)
 const TEMPLATE_REM: Record<string, string> = {
@@ -243,311 +245,229 @@ export function triggerDownload(blob: Blob, filename: string): void {
 }
 
 // ── PDF helpers ───────────────────────────────────────────────────────
+//
+// Page chrome, section titles, stat boxes, text measurement and page breaks
+// all live in lib/pdf-layout.ts (ReportDoc). The report bodies below describe
+// *what* belongs in the document; the engine decides *where* it lands.
 
-function drawPageHeader(doc: any, target: string, PW: number, M: number): number {
-  doc.setFillColor(15, 15, 15)
-  doc.rect(0, 0, PW, 14, 'F')
-  doc.setFillColor(124, 58, 237)
-  doc.rect(0, 14, PW, 0.8, 'F')
-
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(8.5)
-  doc.setTextColor(255, 255, 255)
-  doc.text('VECTRA', M, 9.5)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7.5)
-  doc.setTextColor(170, 170, 170)
-  doc.text(`Security Assessment | ${target}`, PW - M, 9.5, { align: 'right' })
-  return 22
+/** Create a jsPDF instance wired to the shared layout engine. */
+async function createReportDoc(headerLabel: string): Promise<ReportDoc> {
+  const { default: jsPDF }     = await import('jspdf')
+  const { default: autoTable } = await import('jspdf-autotable')
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  return new ReportDoc(doc, autoTable, headerLabel)
 }
 
-function drawSectionTitle(doc: any, title: string, y: number, M: number, CW: number): number {
-  doc.setFillColor(245, 245, 245)
-  doc.rect(M, y, CW, 9, 'F')
-  doc.setFillColor(124, 58, 237)
-  doc.rect(M, y, 3, 9, 'F')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(9.5)
-  doc.setTextColor(15, 15, 15)
-  doc.text(title, M + 8, y + 6)
-  return y + 15
+/** Severity distribution table — identical across every report type. */
+function severityBreakdownTable(
+  rd: ReportDoc,
+  counts: { critical: number; high: number; medium: number; low: number; info: number },
+  total: number,
+): void {
+  const pct = (n: number) => (total ? `${Math.round((n / total) * 100)}%` : '0%')
+  rd.table(
+    [
+      { header: 'Severity',   width: 40 },
+      { header: 'Count',      width: 25, align: 'center' },
+      { header: '% of Total', width: 35, align: 'center' },
+    ],
+    [
+      ['Critical', counts.critical, pct(counts.critical)],
+      ['High',     counts.high,     pct(counts.high)],
+      ['Medium',   counts.medium,   pct(counts.medium)],
+      ['Low',      counts.low,      pct(counts.low)],
+      ['Info',     counts.info,     pct(counts.info)],
+      ['Total',    total,           '100%'],
+    ],
+    {
+      didParseCell: (data: any) => {
+        if (data.section !== 'body' || data.column.index !== 0) return
+        const s = String(data.cell.raw).toLowerCase()
+        if (SEV_FILL[s]) {
+          data.cell.styles.fillColor = SEV_FILL[s]
+          data.cell.styles.textColor = SEV_TEXT[s]
+          data.cell.styles.fontStyle = s === 'critical' || s === 'high' ? 'bold' : 'normal'
+        } else {
+          data.cell.styles.fillColor = [235, 235, 235]
+          data.cell.styles.fontStyle = 'bold'
+        }
+      },
+    },
+  )
 }
 
-function statBox(
-  doc: any, x: number, y: number, w: number, h: number,
-  label: string, value: string, col: [number, number, number],
-) {
-  doc.setDrawColor(220, 220, 220)
-  doc.setLineWidth(0.3)
-  doc.rect(x, y, w, h)
-  doc.setFillColor(...col)
-  doc.rect(x, y, 2.5, h, 'F')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(15)
-  doc.setTextColor(...col)
-  doc.text(value, x + w / 2, y + h / 2 + 1, { align: 'center' })
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(6.5)
-  doc.setTextColor(107, 114, 128)
-  doc.text(label.toUpperCase(), x + w / 2, y + h - 3, { align: 'center' })
+/**
+ * Numbered remediation entry: severity pill, title beside it, then the
+ * recommendation indented underneath. Flows across pages via the engine.
+ */
+function remediationEntry(
+  rd: ReportDoc, index: number, severity: string, title: string, body: string,
+): void {
+  const sev    = (severity ?? '').toLowerCase()
+  const textC  = SEV_TEXT[sev] ?? SEV_TEXT.unknown
+  const indent = 23
+  const pillH  = 6.5
+
+  // Keep the pill with at least the opening lines of its body.
+  rd.ensure(pillH + rd.lineHeight(8) * 2)
+
+  const d = rd.doc
+  d.setFillColor(...(SEV_FILL[sev] ?? SEV_FILL.unknown))
+  d.roundedRect(rd.left, rd.y, 19, pillH, 1, 1, 'F')
+  d.setFont('helvetica', 'bold')
+  d.setFontSize(6.5)
+  d.setTextColor(...textC)
+  d.text(sev.toUpperCase(), rd.left + 9.5, rd.y + pillH / 2, { baseline: 'middle', align: 'center' })
+
+  // Title wraps to the space beside the pill, so it cannot run past the margin.
+  // Every wrapped line is drawn — long titles were previously cut after line one.
+  const titleLines = rd.wrap(`${index}. ${title}`, rd.CW - indent, 8.5, 'bold')
+  const titleLh    = rd.lineHeight(8.5)
+  d.setFont('helvetica', 'bold')
+  d.setFontSize(8.5)
+  d.setTextColor(...COLOR.ink)
+  titleLines.forEach((line, i) => {
+    d.text(line, rd.left + indent, rd.y + pillH / 2 + i * titleLh, { baseline: 'middle' })
+  })
+  rd.y += Math.max(pillH, pillH / 2 + (titleLines.length - 0.5) * titleLh) + SPACE.tight
+
+  rd.paragraph(body, { size: 8, indent, color: [55, 55, 55] })
+  rd.space(SPACE.paragraph)
 }
 
-// Truncate a URL for display in tables — keeps it readable without overflow
-function truncUrl(url: string | null | undefined, maxLen = 55): string {
-  if (!url) return '—'
-  if (url.length <= maxLen) return url
-  // Try to keep hostname + path start
-  try {
-    const u = new URL(url.startsWith('http') ? url : `https://${url}`)
-    const short = u.hostname + u.pathname
-    return short.length <= maxLen ? short : short.slice(0, maxLen - 1) + '…'
-  } catch {
-    return url.slice(0, maxLen - 1) + '…'
+/** Detail card: coloured header strip plus labelled body paragraphs. */
+function detailCard(
+  rd: ReportDoc,
+  opts: {
+    title: string
+    meta?: string
+    fill: Rgb
+    accent: Rgb
+    rows: { label?: string; text: string; style?: 'normal' | 'italic'; size?: number }[]
+  },
+): void {
+  rd.cardHeader(opts.title, opts.meta ?? '', opts.fill, opts.accent)
+  for (const row of opts.rows) {
+    if (!row.text) continue
+    rd.paragraph(row.label ? `${row.label}: ${row.text}` : row.text, {
+      size:   row.size ?? 8,
+      style:  row.style ?? 'normal',
+      indent: 4,
+      color:  row.style === 'italic' ? COLOR.muted : [50, 50, 50],
+    })
+    rd.space(SPACE.tight)
   }
+  rd.space(SPACE.tight)
+  rd.divider()
 }
 
 // ── PDF generator ─────────────────────────────────────────────────────
 
 export async function generatePdf(data: ReportData): Promise<Blob> {
-  const { default: jsPDF } = await import('jspdf')
-  const { default: autoTable } = await import('jspdf-autotable')
-
   const { target, scan, findings, cves, assets, reportId, generatedBy } = data
 
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-  const PW  = 210
-  const PH  = 297
-  const M   = 14   // margin
-  const CW  = PW - 2 * M
-
-  // Table style defaults applied globally
-  const tblHead = { fillColor: [20, 20, 20] as [number, number, number], textColor: [255, 255, 255] as [number, number, number], fontStyle: 'bold' as const, fontSize: 8 }
-  const tblBody = { fontSize: 8, cellPadding: 2.8, overflow: 'linebreak' as const }
-
-  const C = {
-    critical: findings.filter((f) => f.severity === 'critical').length,
-    high:     findings.filter((f) => f.severity === 'high').length,
-    medium:   findings.filter((f) => f.severity === 'medium').length,
-    low:      findings.filter((f) => f.severity === 'low').length,
-    info:     findings.filter((f) => f.severity === 'info').length,
-  }
-
-  const overallRisk =
-    C.critical > 0 ? 'Critical' :
-    C.high     > 0 ? 'High'     :
-    C.medium   > 0 ? 'Medium'   :
-    C.low      > 0 ? 'Low'      : 'Informational'
-
-  const riskRgb: [number, number, number] =
-    C.critical > 0 ? [185, 28, 28]  :
-    C.high     > 0 ? [154, 52, 18]  :
-    C.medium   > 0 ? [133, 77, 14]  :
-    C.low      > 0 ? [29, 78, 216]  : [75, 85, 99]
+  const rd = await createReportDoc(`Security Assessment | ${target}`)
+  const C  = severityCounts(findings)
+  const risk = computeOverallRisk(C)
 
   const scanDate = new Date(scan?.completedAt ?? scan?.createdAt ?? Date.now()).toLocaleDateString(
     'en-US', { year: 'numeric', month: 'long', day: 'numeric' },
   )
 
-  // ─── COVER PAGE ───────────────────────────────────────────────────
+  // ─── COVER ────────────────────────────────────────────────────────
 
-  doc.setFillColor(12, 12, 12)
-  doc.rect(0, 0, PW, 75, 'F')
-  doc.setFillColor(124, 58, 237)
-  doc.rect(0, 75, PW, 2.5, 'F')
-
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(28)
-  doc.setTextColor(255, 255, 255)
-  doc.text('VECTRA', M, 30)
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(160, 160, 160)
-  doc.text('SECURITY PLATFORM', M, 39)
-
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11.5)
-  doc.setTextColor(210, 210, 210)
-  doc.text('SECURITY ASSESSMENT REPORT', PW - M, 55, { align: 'right' })
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(8)
-  doc.setTextColor(124, 58, 237)
-  doc.text('Web Application Security', PW - M, 64, { align: 'right' })
-
-  // Target block
-  doc.setTextColor(100, 100, 100)
-  doc.setFontSize(7.5)
-  doc.setFont('helvetica', 'bold')
-  doc.text('ASSESSMENT TARGET', M, 92)
-
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
-  doc.setTextColor(15, 15, 15)
-  // Truncate very long targets so they don't overflow
-  const displayTarget = target.length > 50 ? target.slice(0, 48) + '…' : target
-  doc.text(displayTarget, M, 103)
-
-  doc.setDrawColor(220, 220, 220)
-  doc.setLineWidth(0.25)
-  doc.line(M, 108, PW - M, 108)
-
-  // Stat boxes (2 rows × 4)
-  const BW  = (CW - 9) / 4
-  const BH  = 22
-  const BY1 = 114
-  const BY2 = 140
-
-  statBox(doc, M,            BY1, BW, BH, 'Total Findings', String(findings.length), [15, 15, 15])
-  statBox(doc, M + BW + 3,   BY1, BW, BH, 'Critical',       String(C.critical),      [185, 28, 28])
-  statBox(doc, M+(BW+3)*2,   BY1, BW, BH, 'High',           String(C.high),          [154, 52, 18])
-  statBox(doc, M+(BW+3)*3,   BY1, BW, BH, 'CVEs Found',     String(cves.length),     [124, 58, 237])
-  statBox(doc, M,            BY2, BW, BH, 'Medium',          String(C.medium),        [133, 77, 14])
-  statBox(doc, M + BW + 3,   BY2, BW, BH, 'Low',            String(C.low),           [29, 78, 216])
-  statBox(doc, M+(BW+3)*2,   BY2, BW, BH, 'Info',           String(C.info),          [75, 85, 99])
-  statBox(doc, M+(BW+3)*3,   BY2, BW, BH, 'Assets',         String(assets.length),   [15, 15, 15])
-
-  // Metadata
-  let my = 172
-  const meta: [string, string][] = [
-    ['Assessment Date',   scanDate],
-    ['Scan Profile',      scan?.scanProfile ?? scan?.scanType ?? 'Web Security'],
-    ['Generated By',      generatedBy],
-    ['Report ID',         reportId],
-    ['Classification',    'CONFIDENTIAL'],
-  ]
-  meta.forEach(([label, value], i) => {
-    const bg = i % 2 === 0 ? 250 : 255
-    doc.setFillColor(bg, bg, bg)
-    doc.rect(M, my - 5, CW, 9, 'F')
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7.5)
-    doc.setTextColor(100, 100, 100)
-    doc.text(label, M + 3, my)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(20, 20, 20)
-    doc.text(value, M + 56, my)
-    my += 9
+  drawCover(rd, {
+    kicker:   'SECURITY ASSESSMENT REPORT',
+    subtitle: 'Web Application Security',
+    target,
+    stats: [
+      { label: 'Total Findings', value: String(findings.length), color: COLOR.ink },
+      { label: 'Critical',       value: String(C.critical),      color: SEV_TEXT.critical },
+      { label: 'High',           value: String(C.high),          color: SEV_TEXT.high },
+      { label: 'CVEs Found',     value: String(cves.length),     color: COLOR.accent },
+      { label: 'Medium',         value: String(C.medium),        color: SEV_TEXT.medium },
+      { label: 'Low',            value: String(C.low),           color: SEV_TEXT.low },
+      { label: 'Info',           value: String(C.info),          color: SEV_TEXT.info },
+      { label: 'Assets',         value: String(assets.length),   color: COLOR.ink },
+    ],
+    meta: [
+      ['Assessment Date', scanDate],
+      ['Scan Profile',    scan?.scanProfile ?? scan?.scanType ?? 'Web Security'],
+      ['Generated By',    generatedBy],
+      ['Report ID',       reportId],
+      ['Classification',  'CONFIDENTIAL'],
+    ],
   })
 
-  doc.setTextColor(190, 190, 190)
-  doc.setFontSize(6.5)
-  doc.text(
-    'This document contains confidential security assessment information. Unauthorized distribution is prohibited.',
-    PW / 2, PH - 10, { align: 'center' },
-  )
+  // ─── EXECUTIVE SUMMARY ────────────────────────────────────────────
 
-  // ─── PAGE 2: EXECUTIVE SUMMARY ────────────────────────────────────
+  rd.newPage()
+  rd.sectionTitle('Executive Summary')
 
-  doc.addPage()
-  let y = drawPageHeader(doc, target, PW, M)
-  y = drawSectionTitle(doc, 'Executive Summary', y, M, CW)
-
-  const intro = `This security assessment was conducted against ${target} on ${scanDate}. ` +
+  rd.paragraph(
+    `This security assessment was conducted against ${target} on ${scanDate}. ` +
     `The assessment identified ${findings.length} security finding${findings.length !== 1 ? 's' : ''} across ` +
     `${assets.length} discovered asset${assets.length !== 1 ? 's' : ''}. ` +
     (cves.length > 0
       ? `CVE correlation analysis identified ${cves.length} known vulnerabilities in the detected technology stack. `
       : '') +
-    `Findings are classified by severity and prioritized for remediation.`
+    'Findings are classified by severity and prioritized for remediation.',
+    { size: 9 },
+  )
+  rd.space(SPACE.block)
 
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(40, 40, 40)
-  const introLines = doc.splitTextToSize(intro, CW)
-  doc.text(introLines, M, y)
-  y += introLines.length * 5.2 + 7
+  rd.badge(`OVERALL RISK: ${risk.label.toUpperCase()}`, risk.rgb)
+  rd.space(SPACE.block)
 
-  // Risk badge
-  doc.setFillColor(...riskRgb)
-  doc.roundedRect(M, y, 70, 11, 2, 2, 'F')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(8.5)
-  doc.setTextColor(255, 255, 255)
-  doc.text(`OVERALL RISK: ${overallRisk.toUpperCase()}`, M + 35, y + 7.5, { align: 'center' })
-  y += 19
-
-  autoTable(doc, {
-    startY: y,
-    head: [['Severity', 'Count', '% of Total']],
-    body: [
-      ['Critical', C.critical, findings.length ? `${Math.round((C.critical / findings.length) * 100)}%` : '0%'],
-      ['High',     C.high,     findings.length ? `${Math.round((C.high     / findings.length) * 100)}%` : '0%'],
-      ['Medium',   C.medium,   findings.length ? `${Math.round((C.medium   / findings.length) * 100)}%` : '0%'],
-      ['Low',      C.low,      findings.length ? `${Math.round((C.low      / findings.length) * 100)}%` : '0%'],
-      ['Info',     C.info,     findings.length ? `${Math.round((C.info     / findings.length) * 100)}%` : '0%'],
-      ['Total',    findings.length, '100%'],
-    ],
-    headStyles: tblHead,
-    styles:     { ...tblBody, cellPadding: 3 },
-    columnStyles: { 0: { cellWidth: 45 }, 1: { cellWidth: 30 }, 2: { cellWidth: 'auto' } },
-    margin: { left: M, right: M },
-    showHead: 'everyPage',
-    didParseCell: (data: any) => {
-      if (data.section === 'body' && data.column.index === 0) {
-        const s = String(data.cell.raw).toLowerCase()
-        if (SEV_FILL[s]) {
-          data.cell.styles.fillColor = SEV_FILL[s]
-          data.cell.styles.textColor = SEV_TEXT[s]
-          data.cell.styles.fontStyle = (s === 'critical' || s === 'high') ? 'bold' : 'normal'
-        } else {
-          data.cell.styles.fillColor = [235, 235, 235]
-          data.cell.styles.fontStyle = 'bold'
-        }
-      }
-    },
-  })
-  y = (doc as any).lastAutoTable.finalY + 14
+  severityBreakdownTable(rd, C, findings.length)
 
   // ─── ASSET INVENTORY ──────────────────────────────────────────────
 
   if (assets.length > 0) {
-    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
-    y = drawSectionTitle(doc, 'Asset Inventory', y, M, CW)
-
-    autoTable(doc, {
-      startY: y,
-      head: [['Subdomain / Host', 'IP Address', 'Server', 'Status', 'Technologies']],
-      body: assets.slice(0, 80).map((a) => [
+    rd.sectionTitle('Asset Inventory')
+    rd.table(
+      [
+        { header: 'Subdomain / Host', width: 50 },
+        { header: 'IP Address',       width: 26 },
+        { header: 'Server',           width: 32 },
+        { header: 'Status',           width: 16, align: 'center' },
+        { header: 'Technologies',     width: 42 },
+      ],
+      assets.slice(0, 80).map((a) => [
         a.subdomain ?? a.domain ?? '',
         a.ip ?? '—',
-        a.server ? a.server.slice(0, 22) : '—',
+        a.server ?? '—',
         a.alive ? `${a.statusCode ?? 200}` : 'Offline',
         (a.technologies ?? []).slice(0, 3).join(', ') || '—',
       ]),
-      headStyles: tblHead,
-      styles:     tblBody,
-      columnStyles: {
-        0: { cellWidth: 50 },
-        1: { cellWidth: 28 },
-        2: { cellWidth: 34 },
-        3: { cellWidth: 18 },
-        4: { cellWidth: 'auto' },
+      {
+        didParseCell: (d: any) => {
+          if (d.section === 'body' && d.column.index === 3) {
+            const v = String(d.cell.raw)
+            d.cell.styles.textColor = v === 'Offline' ? [185, 28, 28] : [22, 101, 52]
+            d.cell.styles.fontStyle = 'bold'
+          }
+        },
       },
-      margin: { left: M, right: M },
-      showHead: 'everyPage',
-      didParseCell: (data: any) => {
-        if (data.section === 'body' && data.column.index === 3) {
-          const v = String(data.cell.raw)
-          data.cell.styles.textColor = v === 'Offline' ? [185, 28, 28] : [22, 101, 52]
-          data.cell.styles.fontStyle = 'bold'
-        }
-      },
-    })
-    y = (doc as any).lastAutoTable.finalY + 14
+    )
   }
 
-  // ─── FINDINGS SUMMARY ─────────────────────────────────────────────
+  // ─── FINDINGS ─────────────────────────────────────────────────────
 
   if (findings.length > 0) {
-    doc.addPage()
-    y = drawPageHeader(doc, target, PW, M)
-    y = drawSectionTitle(doc, 'Findings Summary', y, M, CW)
+    rd.newPage()
+    rd.sectionTitle('Findings Summary')
 
-    autoTable(doc, {
-      startY: y,
-      head: [['#', 'Vulnerability', 'Severity', 'CVSS', 'Source', 'Affected URL']],
-      body: findings.map((f, i) => [
+    rd.table(
+      [
+        { header: '#',             width: 8,  align: 'center' },
+        { header: 'Vulnerability', width: 56 },
+        { header: 'Severity',      width: 20, align: 'center' },
+        { header: 'CVSS',          width: 13, align: 'center' },
+        { header: 'Source',        width: 20, align: 'center' },
+        { header: 'Affected URL',  width: 49 },
+      ],
+      findings.map((f, i) => [
         i + 1,
         f.title,
         f.severity.toUpperCase(),
@@ -555,118 +475,44 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
         f.source === 'vectra' ? 'Vectra' : f.source === 'wpscan' ? 'WPScan' : 'Nuclei',
         truncUrl(f.matchedAt ?? f.host),
       ]),
-      headStyles: tblHead,
-      styles:     tblBody,
-      columnStyles: {
-        0: { cellWidth: 8 },
-        1: { cellWidth: 58 },
-        2: { cellWidth: 22 },
-        3: { cellWidth: 14 },
-        4: { cellWidth: 22 },
-        5: { cellWidth: 'auto' },
-      },
-      margin: { left: M, right: M },
-      showHead: 'everyPage',
-      didParseCell: (data: any) => {
-        if (data.section === 'body' && data.column.index === 2) {
-          const s = String(data.cell.raw).toLowerCase()
-          if (SEV_FILL[s]) {
-            data.cell.styles.fillColor = SEV_FILL[s]
-            data.cell.styles.textColor = SEV_TEXT[s]
-            data.cell.styles.fontStyle = 'bold'
-          }
-        }
-      },
-    })
-    y = (doc as any).lastAutoTable.finalY + 14
+      { didParseCell: (d: any) => ReportDoc.severityCell(d, 2) },
+    )
 
-    // Detailed findings
-    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
-    y = drawSectionTitle(doc, 'Detailed Findings', y, M, CW)
+    rd.sectionTitle('Detailed Findings')
 
     for (const f of findings.slice(0, 40)) {
-      // Estimate block height to check for page break
-      const descLines = f.description
-        ? doc.splitTextToSize(f.description, CW - 6).length
-        : 0
-      const remLines  = doc.splitTextToSize(`Remediation: ${getRemediation(f)}`, CW - 6).length
-      const urlH      = (f.matchedAt ?? f.host) ? 6 : 0
-      const blockH    = 12 + urlH + descLines * 4.5 + remLines * 4.2 + 8
-
-      if (y + blockH > PH - 18) {
-        doc.addPage()
-        y = drawPageHeader(doc, target, PW, M)
-        y += 4
-      }
-
-      const sev   = f.severity.toLowerCase()
-      const fill  = SEV_FILL[sev]  ?? [243, 244, 246]
-      const textC = SEV_TEXT[sev]  ?? [75, 85, 99]
-
-      // Header strip
-      doc.setFillColor(...fill)
-      doc.rect(M, y, CW, 9, 'F')
-      doc.setFillColor(...textC)
-      doc.rect(M, y, 3, 9, 'F')
-
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(8.5)
-      doc.setTextColor(...textC)
-      doc.text(f.title.length > 62 ? f.title.slice(0, 60) + '…' : f.title, M + 7, y + 6)
-
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7)
-      doc.setTextColor(100, 100, 100)
-      const metaRight = `${sev.toUpperCase()}  ·  CVSS ${CVSS_SCORE[sev]?.toFixed(1)}  ·  Risk ${RISK_SCORE[sev]}/100`
-      doc.text(metaRight, PW - M, y + 6, { align: 'right' })
-      y += 11
-
-      // Affected URL
-      const affectedUrl = f.matchedAt ?? f.host
-      if (affectedUrl) {
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(7.5)
-        doc.setTextColor(80, 80, 80)
-        const urlLines = doc.splitTextToSize(`URL: ${truncUrl(affectedUrl, 80)}`, CW - 6)
-        doc.text(urlLines, M + 4, y)
-        y += urlLines.length * 4 + 2
-      }
-
-      // Description
-      if (f.description) {
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(8)
-        doc.setTextColor(50, 50, 50)
-        const dl = doc.splitTextToSize(f.description, CW - 6)
-        doc.text(dl, M + 4, y)
-        y += dl.length * 4.5 + 3
-      }
-
-      // Remediation
-      doc.setFont('helvetica', 'italic')
-      doc.setFontSize(7.5)
-      doc.setTextColor(100, 100, 100)
-      const rl = doc.splitTextToSize(`Remediation: ${getRemediation(f)}`, CW - 6)
-      doc.text(rl, M + 4, y)
-      y += rl.length * 4.2 + 7
-
-      doc.setDrawColor(225, 225, 225)
-      doc.setLineWidth(0.15)
-      doc.line(M, y - 4, PW - M, y - 4)
+      const sev = f.severity.toLowerCase()
+      detailCard(rd, {
+        title:  f.title,
+        meta:   `${sev.toUpperCase()}  ·  CVSS ${CVSS_SCORE[sev]?.toFixed(1) ?? '0.0'}  ·  Risk ${RISK_SCORE[sev] ?? 0}/100`,
+        fill:   SEV_FILL[sev] ?? SEV_FILL.unknown,
+        accent: SEV_TEXT[sev] ?? SEV_TEXT.unknown,
+        rows: [
+          ...(f.matchedAt ?? f.host ? [{ label: 'URL', text: truncUrl(f.matchedAt ?? f.host, 120), size: 7.5 }] : []),
+          ...(f.description ? [{ text: f.description }] : []),
+          { label: 'Remediation', text: getRemediation(f), style: 'italic' as const, size: 7.5 },
+        ],
+      })
     }
   }
 
   // ─── CVE INTELLIGENCE ─────────────────────────────────────────────
 
   if (cves.length > 0) {
-    doc.addPage()
-    y = drawPageHeader(doc, target, PW, M)
-    y = drawSectionTitle(doc, 'CVE Intelligence', y, M, CW)
+    rd.newPage()
+    rd.sectionTitle('CVE Intelligence')
 
-    autoTable(doc, {
-      startY: y,
-      head: [['CVE ID', 'Technology', 'Version', 'CVSS', 'Severity', 'Exploit', 'Published']],
-      body: cves.map((c) => [
+    rd.table(
+      [
+        { header: 'CVE ID',     width: 34 },
+        { header: 'Technology', width: 30 },
+        { header: 'Version',    width: 20 },
+        { header: 'CVSS',       width: 14, align: 'center' },
+        { header: 'Severity',   width: 22, align: 'center' },
+        { header: 'Exploit',    width: 16, align: 'center' },
+        { header: 'Published',  width: 24, align: 'center' },
+      ],
+      cves.map((c) => [
         c.cveId,
         c.technology,
         c.version,
@@ -677,147 +523,48 @@ export async function generatePdf(data: ReportData): Promise<Blob> {
           ? new Date(c.published).toLocaleDateString('en-US', { year: 'numeric', month: 'short' })
           : '—',
       ]),
-      headStyles: tblHead,
-      styles:     tblBody,
-      columnStyles: {
-        0: { cellWidth: 36 },
-        1: { cellWidth: 30 },
-        2: { cellWidth: 20 },
-        3: { cellWidth: 14 },
-        4: { cellWidth: 24 },
-        5: { cellWidth: 16 },
-        6: { cellWidth: 'auto' },
+      {
+        didParseCell: (d: any) => {
+          ReportDoc.severityCell(d, 4)
+          if (d.section !== 'body') return
+          if (d.column.index === 5 && String(d.cell.raw) === 'YES') {
+            d.cell.styles.textColor = [185, 28, 28]
+            d.cell.styles.fontStyle = 'bold'
+          }
+          if (d.column.index === 0) {
+            d.cell.styles.textColor = [109, 40, 217]
+            d.cell.styles.fontStyle = 'bold'
+          }
+        },
       },
-      margin: { left: M, right: M },
-      showHead: 'everyPage',
-      didParseCell: (data: any) => {
-        if (data.section === 'body') {
-          if (data.column.index === 4) {
-            const s = String(data.cell.raw).toLowerCase()
-            if (SEV_FILL[s]) {
-              data.cell.styles.fillColor = SEV_FILL[s]
-              data.cell.styles.textColor = SEV_TEXT[s]
-              data.cell.styles.fontStyle = 'bold'
-            }
-          }
-          if (data.column.index === 5 && String(data.cell.raw) === 'YES') {
-            data.cell.styles.textColor = [185, 28, 28]
-            data.cell.styles.fontStyle = 'bold'
-          }
-          if (data.column.index === 0) {
-            data.cell.styles.textColor = [109, 40, 217]
-            data.cell.styles.fontStyle = 'bold'
-          }
-        }
-      },
-    })
-    y = (doc as any).lastAutoTable.finalY + 14
+    )
 
-    // CVE descriptions
-    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
-    y = drawSectionTitle(doc, 'CVE Details', y, M, CW)
-
+    rd.sectionTitle('CVE Details')
     for (const c of cves.slice(0, 25)) {
-      const descLines = c.description
-        ? doc.splitTextToSize(c.description, CW - 6).length
-        : 0
-      if (y + 10 + descLines * 4.5 > PH - 18) {
-        doc.addPage()
-        y = drawPageHeader(doc, target, PW, M)
-        y += 4
-      }
-
-      doc.setFillColor(245, 245, 255)
-      doc.rect(M, y, CW, 8, 'F')
-      doc.setFillColor(109, 40, 217)
-      doc.rect(M, y, 3, 8, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(8.5)
-      doc.setTextColor(109, 40, 217)
-      doc.text(c.cveId, M + 7, y + 5.5)
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7.5)
-      doc.setTextColor(80, 80, 80)
-      doc.text(`${c.technology} ${c.version}  ·  CVSS ${c.cvssScore.toFixed(1)}  ·  ${c.exploitAvailable ? 'EXPLOIT AVAILABLE' : 'No known exploit'}`, PW - M, y + 5.5, { align: 'right' })
-      y += 10
-
-      if (c.description) {
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(8)
-        doc.setTextColor(50, 50, 50)
-        const dl = doc.splitTextToSize(c.description, CW - 6)
-        doc.text(dl, M + 4, y)
-        y += dl.length * 4.5 + 7
-      } else {
-        y += 5
-      }
-
-      doc.setDrawColor(225, 225, 225)
-      doc.setLineWidth(0.15)
-      doc.line(M, y - 4, PW - M, y - 4)
+      detailCard(rd, {
+        title:  c.cveId,
+        meta:   `${c.technology} ${c.version}  ·  CVSS ${c.cvssScore.toFixed(1)}  ·  ${c.exploitAvailable ? 'EXPLOIT AVAILABLE' : 'No known exploit'}`,
+        fill:   [245, 245, 255],
+        accent: [109, 40, 217],
+        rows:   c.description ? [{ text: c.description }] : [],
+      })
     }
   }
 
   // ─── RECOMMENDATIONS ──────────────────────────────────────────────
 
-  doc.addPage()
-  y = drawPageHeader(doc, target, PW, M)
-  y = drawSectionTitle(doc, 'Remediation Recommendations', y, M, CW)
+  rd.newPage()
+  rd.sectionTitle('Remediation Recommendations')
 
-  const sortedFindings = [...findings].sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
-
+  const sortedFindings = [...findings].sort(
+    (a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5),
+  )
   sortedFindings.slice(0, 30).forEach((f, i) => {
-    const rem    = getRemediation(f)
-    const rl     = doc.splitTextToSize(rem, CW - 24).length
-    const blockH = 9 + rl * 4.5 + 6
-
-    if (y + blockH > PH - 18) {
-      doc.addPage()
-      y = drawPageHeader(doc, target, PW, M)
-      y += 4
-    }
-
-    const sev   = f.severity.toLowerCase()
-    const textC = SEV_TEXT[sev] ?? [75, 85, 99]
-
-    doc.setFillColor(...(SEV_FILL[sev] ?? [243, 244, 246]))
-    doc.roundedRect(M, y, 19, 6.5, 1, 1, 'F')
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(6.5)
-    doc.setTextColor(...textC)
-    doc.text(sev.toUpperCase(), M + 9.5, y + 4.5, { align: 'center' })
-
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8.5)
-    doc.setTextColor(15, 15, 15)
-    doc.text(`${i + 1}. ${f.title}`, M + 23, y + 4.5)
-    y += 9
-
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8)
-    doc.setTextColor(55, 55, 55)
-    const remLines = doc.splitTextToSize(rem, CW - 24)
-    doc.text(remLines, M + 23, y)
-    y += remLines.length * 4.5 + 6
+    remediationEntry(rd, i + 1, f.severity, f.title, getRemediation(f))
   })
 
-  // ─── PAGE NUMBERS (skip cover) ────────────────────────────────────
-
-  const total = (doc.internal as any).getNumberOfPages()
-  for (let p = 2; p <= total; p++) {
-    doc.setPage(p)
-    doc.setDrawColor(210, 210, 210)
-    doc.setLineWidth(0.2)
-    doc.line(M, PH - 11, PW - M, PH - 11)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6.5)
-    doc.setTextColor(150, 150, 150)
-    doc.text(`Report ID: ${reportId}`, M, PH - 6)
-    doc.text(`Page ${p - 1} of ${total - 1}`, PW - M, PH - 6, { align: 'right' })
-    doc.text('CONFIDENTIAL', PW / 2, PH - 6, { align: 'center' })
-  }
-
-  return doc.output('blob') as unknown as Blob
+  rd.drawFooters(reportId)
+  return rd.doc.output('blob') as unknown as Blob
 }
 
 // ── Excel generator ───────────────────────────────────────────────────
@@ -1046,39 +793,11 @@ export async function fetchNetworkReportData(uid: string, target: string): Promi
 }
 
 export async function generateNetworkPdf(data: NetworkReportData): Promise<Blob> {
-  const { default: jsPDF }      = await import('jspdf')
-  const { default: autoTable }  = await import('jspdf-autotable')
-
   const { target, scan, hosts, findings, cves, timeline, reportId, generatedBy } = data
 
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-  const PW  = 210
-  const PH  = 297
-  const M   = 14
-  const CW  = PW - 2 * M
-
-  const tblHead = { fillColor: [20, 20, 20] as [number, number, number], textColor: [255, 255, 255] as [number, number, number], fontStyle: 'bold' as const, fontSize: 8 }
-  const tblBody = { fontSize: 8, cellPadding: 2.8, overflow: 'linebreak' as const }
-
-  const FC = {
-    critical: findings.filter((f) => f.severity === 'critical').length,
-    high:     findings.filter((f) => f.severity === 'high').length,
-    medium:   findings.filter((f) => f.severity === 'medium').length,
-    low:      findings.filter((f) => f.severity === 'low').length,
-    info:     findings.filter((f) => f.severity === 'info').length,
-  }
-
-  const overallRisk =
-    FC.critical > 0 ? 'Critical' :
-    FC.high     > 0 ? 'High'     :
-    FC.medium   > 0 ? 'Medium'   :
-    FC.low      > 0 ? 'Low'      : 'Informational'
-
-  const riskRgb: [number, number, number] =
-    FC.critical > 0 ? [185, 28, 28]  :
-    FC.high     > 0 ? [154, 52, 18]  :
-    FC.medium   > 0 ? [133, 77, 14]  :
-    FC.low      > 0 ? [29, 78, 216]  : [75, 85, 99]
+  const rd = await createReportDoc(`Network Assessment | ${target}`)
+  const FC = severityCounts(findings)
+  const risk = computeOverallRisk(FC)
 
   const scanDate = new Date(scan?.completedAt ?? scan?.createdAt ?? Date.now()).toLocaleDateString(
     'en-US', { year: 'numeric', month: 'long', day: 'numeric' },
@@ -1092,98 +811,37 @@ export async function generateNetworkPdf(data: NetworkReportData): Promise<Blob>
     ? Math.round(hosts.reduce((n, h) => n + (h.riskScore ?? 0), 0) / hosts.length)
     : 0
 
-  // ─── COVER PAGE ───────────────────────────────────────────────────
+  // ─── COVER ────────────────────────────────────────────────────────
 
-  doc.setFillColor(12, 12, 12)
-  doc.rect(0, 0, PW, 75, 'F')
-  doc.setFillColor(124, 58, 237)
-  doc.rect(0, 75, PW, 2.5, 'F')
-
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(28)
-  doc.setTextColor(255, 255, 255)
-  doc.text('VECTRA', M, 30)
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(160, 160, 160)
-  doc.text('SECURITY PLATFORM', M, 39)
-
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11.5)
-  doc.setTextColor(210, 210, 210)
-  doc.text('NETWORK SECURITY ASSESSMENT', PW - M, 55, { align: 'right' })
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(8)
-  doc.setTextColor(124, 58, 237)
-  doc.text('Network Infrastructure Security', PW - M, 64, { align: 'right' })
-
-  doc.setTextColor(100, 100, 100)
-  doc.setFontSize(7.5)
-  doc.setFont('helvetica', 'bold')
-  doc.text('ASSESSMENT TARGET', M, 92)
-
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
-  doc.setTextColor(15, 15, 15)
-  const displayTarget = target.length > 50 ? target.slice(0, 48) + '…' : target
-  doc.text(displayTarget, M, 103)
-
-  doc.setDrawColor(220, 220, 220)
-  doc.setLineWidth(0.25)
-  doc.line(M, 108, PW - M, 108)
-
-  const BW  = (CW - 9) / 4
-  const BH  = 22
-  const BY1 = 114
-  const BY2 = 140
-
-  statBox(doc, M,              BY1, BW, BH, 'Total Hosts',      String(hosts.length),       [15, 15, 15])
-  statBox(doc, M + BW + 3,     BY1, BW, BH, 'Live Hosts',       String(liveHosts),          [22, 101, 52])
-  statBox(doc, M + (BW + 3)*2, BY1, BW, BH, 'Open Ports',       String(totalPorts),         [29, 78, 216])
-  statBox(doc, M + (BW + 3)*3, BY1, BW, BH, 'CVEs Found',       String(cves.length),        [124, 58, 237])
-  statBox(doc, M,              BY2, BW, BH, 'Critical Findings', String(FC.critical),        [185, 28, 28])
-  statBox(doc, M + BW + 3,     BY2, BW, BH, 'High Findings',    String(FC.high),            [154, 52, 18])
-  statBox(doc, M + (BW + 3)*2, BY2, BW, BH, 'SSL Issues',       String(sslFindings.length), [133, 77, 14])
-  statBox(doc, M + (BW + 3)*3, BY2, BW, BH, 'Avg Risk Score',   String(avgRisk),            [75, 85, 99])
-
-  let my = 172
-  const meta: [string, string][] = [
-    ['Assessment Date',   scanDate],
-    ['Scan Profile',      scan?.scanProfile ?? 'Network Scan'],
-    ['Generated By',      generatedBy],
-    ['Report ID',         reportId],
-    ['Classification',    'CONFIDENTIAL'],
-  ]
-  meta.forEach(([label, value], i) => {
-    const bg = i % 2 === 0 ? 250 : 255
-    doc.setFillColor(bg, bg, bg)
-    doc.rect(M, my - 5, CW, 9, 'F')
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7.5)
-    doc.setTextColor(100, 100, 100)
-    doc.text(label, M + 3, my)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(20, 20, 20)
-    doc.text(value, M + 56, my)
-    my += 9
+  drawCover(rd, {
+    kicker:   'NETWORK SECURITY ASSESSMENT',
+    subtitle: 'Network Infrastructure Security',
+    target,
+    stats: [
+      { label: 'Total Hosts',       value: String(hosts.length),       color: COLOR.ink },
+      { label: 'Live Hosts',        value: String(liveHosts),          color: [22, 101, 52] },
+      { label: 'Open Ports',        value: String(totalPorts),         color: [29, 78, 216] },
+      { label: 'CVEs Found',        value: String(cves.length),        color: COLOR.accent },
+      { label: 'Critical Findings', value: String(FC.critical),        color: SEV_TEXT.critical },
+      { label: 'High Findings',     value: String(FC.high),            color: SEV_TEXT.high },
+      { label: 'SSL Issues',        value: String(sslFindings.length), color: SEV_TEXT.medium },
+      { label: 'Avg Risk Score',    value: String(avgRisk),            color: SEV_TEXT.info },
+    ],
+    meta: [
+      ['Assessment Date', scanDate],
+      ['Scan Profile',    scan?.scanProfile ?? 'Network Scan'],
+      ['Generated By',    generatedBy],
+      ['Report ID',       reportId],
+      ['Classification',  'CONFIDENTIAL'],
+    ],
   })
-
-  doc.setTextColor(190, 190, 190)
-  doc.setFontSize(6.5)
-  doc.text(
-    'This document contains confidential security assessment information. Unauthorized distribution is prohibited.',
-    PW / 2, PH - 10, { align: 'center' },
-  )
 
   // ─── EXECUTIVE SUMMARY ────────────────────────────────────────────
 
-  doc.addPage()
-  let y = drawPageHeader(doc, target, PW, M)
-  y = drawSectionTitle(doc, 'Executive Summary', y, M, CW)
+  rd.newPage()
+  rd.sectionTitle('Executive Summary')
 
-  const intro =
+  rd.paragraph(
     `This network security assessment was conducted against ${target} on ${scanDate}. ` +
     `The assessment discovered ${hosts.length} host${hosts.length !== 1 ? 's' : ''} (${liveHosts} live) ` +
     `across ${totalPorts} open port${totalPorts !== 1 ? 's' : ''}. ` +
@@ -1193,284 +851,198 @@ export async function generateNetworkPdf(data: NetworkReportData): Promise<Blob>
     (cves.length > 0
       ? `CVE correlation identified ${cves.length} known vulnerabilit${cves.length !== 1 ? 'ies' : 'y'} in detected service versions. `
       : '') +
-    `Findings are classified by severity and prioritized for remediation.`
+    'Findings are classified by severity and prioritized for remediation.',
+    { size: 9 },
+  )
+  rd.space(SPACE.block)
 
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(40, 40, 40)
-  const introLines = doc.splitTextToSize(intro, CW)
-  doc.text(introLines, M, y)
-  y += introLines.length * 5.2 + 7
+  rd.badge(`OVERALL RISK: ${risk.label.toUpperCase()}`, risk.rgb)
+  rd.space(SPACE.block)
 
-  doc.setFillColor(...riskRgb)
-  doc.roundedRect(M, y, 70, 11, 2, 2, 'F')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(8.5)
-  doc.setTextColor(255, 255, 255)
-  doc.text(`OVERALL RISK: ${overallRisk.toUpperCase()}`, M + 35, y + 7.5, { align: 'center' })
-  y += 19
+  severityBreakdownTable(rd, FC, findings.length)
 
-  autoTable(doc, {
-    startY: y,
-    head: [['Severity', 'Count', '% of Total']],
-    body: [
-      ['Critical', FC.critical, findings.length ? `${Math.round((FC.critical / findings.length) * 100)}%` : '0%'],
-      ['High',     FC.high,     findings.length ? `${Math.round((FC.high     / findings.length) * 100)}%` : '0%'],
-      ['Medium',   FC.medium,   findings.length ? `${Math.round((FC.medium   / findings.length) * 100)}%` : '0%'],
-      ['Low',      FC.low,      findings.length ? `${Math.round((FC.low      / findings.length) * 100)}%` : '0%'],
-      ['Info',     FC.info,     findings.length ? `${Math.round((FC.info     / findings.length) * 100)}%` : '0%'],
-      ['Total',    findings.length, '100%'],
-    ],
-    headStyles: tblHead,
-    styles:     { ...tblBody, cellPadding: 3 },
-    columnStyles: { 0: { cellWidth: 45 }, 1: { cellWidth: 30 }, 2: { cellWidth: 'auto' } },
-    margin: { left: M, right: M },
-    showHead: 'everyPage',
-    didParseCell: (data: any) => {
-      if (data.section === 'body' && data.column.index === 0) {
-        const s = String(data.cell.raw).toLowerCase()
-        if (SEV_FILL[s]) {
-          data.cell.styles.fillColor = SEV_FILL[s]
-          data.cell.styles.textColor = SEV_TEXT[s]
-          data.cell.styles.fontStyle = (s === 'critical' || s === 'high') ? 'bold' : 'normal'
-        } else {
-          data.cell.styles.fillColor = [235, 235, 235]
-          data.cell.styles.fontStyle = 'bold'
-        }
-      }
-    },
-  })
-  y = (doc as any).lastAutoTable.finalY + 14
-
-  // ─── HOST DISCOVERY & RISK ASSESSMENT ────────────────────────────
+  // ─── HOST DISCOVERY ───────────────────────────────────────────────
 
   if (hosts.length > 0) {
-    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
-    y = drawSectionTitle(doc, 'Host Discovery & Risk Assessment', y, M, CW)
-
-    autoTable(doc, {
-      startY: y,
-      head: [['IP Address', 'Hostname', 'Operating System', 'Risk', 'Level', 'Ports', 'Vendor']],
-      body: hosts.map((h) => [
+    rd.sectionTitle('Host Discovery & Risk Assessment')
+    rd.table(
+      [
+        { header: 'IP Address',       width: 28 },
+        { header: 'Hostname',         width: 32 },
+        { header: 'Operating System', width: 38 },
+        { header: 'Risk',             width: 12, align: 'center' },
+        { header: 'Level',            width: 20, align: 'center' },
+        { header: 'Ports',            width: 12, align: 'center' },
+        { header: 'Vendor',           width: 24 },
+      ],
+      hosts.map((h) => [
         h.ip,
         h.hostname ?? '—',
-        h.os ? (h.os.length > 30 ? h.os.slice(0, 28) + '…' : h.os) : '—',
+        h.os ?? '—',
         h.riskScore != null ? String(h.riskScore) : '—',
         (h.riskLevel ?? '—').toUpperCase(),
         String(h.ports.length),
-        h.vendor ? (h.vendor.length > 20 ? h.vendor.slice(0, 18) + '…' : h.vendor) : '—',
+        h.vendor ?? '—',
       ]),
-      headStyles: tblHead,
-      styles:     tblBody,
-      columnStyles: {
-        0: { cellWidth: 28 },
-        1: { cellWidth: 34 },
-        2: { cellWidth: 38 },
-        3: { cellWidth: 12 },
-        4: { cellWidth: 20 },
-        5: { cellWidth: 12 },
-        6: { cellWidth: 'auto' },
+      {
+        didParseCell: (d: any) => {
+          if (d.section !== 'body' || d.column.index !== 4) return
+          const lvl = String(d.cell.raw).toLowerCase()
+          if (lvl === 'critical')    { d.cell.styles.textColor = [185, 28, 28]; d.cell.styles.fontStyle = 'bold' }
+          else if (lvl === 'high')   { d.cell.styles.textColor = [154, 52, 18]; d.cell.styles.fontStyle = 'bold' }
+          else if (lvl === 'medium') { d.cell.styles.textColor = [133, 77, 14] }
+          else if (lvl === 'low')    { d.cell.styles.textColor = [29, 78, 216] }
+        },
       },
-      margin: { left: M, right: M },
-      showHead: 'everyPage',
-      didParseCell: (data: any) => {
-        if (data.section === 'body' && data.column.index === 4) {
-          const lvl = String(data.cell.raw).toLowerCase()
-          if (lvl === 'critical')      { data.cell.styles.textColor = [185, 28, 28];  data.cell.styles.fontStyle = 'bold' }
-          else if (lvl === 'high')     { data.cell.styles.textColor = [154, 52, 18];  data.cell.styles.fontStyle = 'bold' }
-          else if (lvl === 'medium')   { data.cell.styles.textColor = [133, 77, 14] }
-          else if (lvl === 'low')      { data.cell.styles.textColor = [29, 78, 216] }
-        }
-      },
-    })
-    y = (doc as any).lastAutoTable.finalY + 14
+    )
   }
 
-  // ─── OPEN PORTS & SERVICES ────────────────────────────────────────
+  // ─── PORTS & SERVICES ─────────────────────────────────────────────
 
   const allPorts = hosts.flatMap((h) => h.ports.map((p) => ({ ip: h.ip, ...p })))
 
   if (allPorts.length > 0) {
-    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
-    y = drawSectionTitle(doc, 'Open Ports & Service Detection', y, M, CW)
-
-    autoTable(doc, {
-      startY: y,
-      head: [['IP Address', 'Port', 'Protocol', 'Service', 'Version', 'State']],
-      body: allPorts.slice(0, 200).map((p) => [
+    rd.sectionTitle('Open Ports & Service Detection')
+    rd.table(
+      [
+        { header: 'IP Address', width: 28 },
+        { header: 'Port',       width: 13, align: 'center' },
+        { header: 'Protocol',   width: 18, align: 'center' },
+        { header: 'Service',    width: 26 },
+        { header: 'Version',    width: 56 },
+        { header: 'State',      width: 15, align: 'center' },
+      ],
+      allPorts.slice(0, 200).map((p) => [
         p.ip,
         String(p.port),
         p.protocol ?? '—',
-        p.service   ?? '—',
-        p.version   ? p.version.slice(0, 45) : '—',
-        p.state     ?? '—',
+        p.service  ?? '—',
+        p.version  ?? '—',
+        p.state    ?? '—',
       ]),
-      headStyles: tblHead,
-      styles:     tblBody,
-      columnStyles: {
-        0: { cellWidth: 28 },
-        1: { cellWidth: 12 },
-        2: { cellWidth: 18 },
-        3: { cellWidth: 26 },
-        4: { cellWidth: 62 },
-        5: { cellWidth: 'auto' },
+      {
+        didParseCell: (d: any) => {
+          if (d.section !== 'body' || d.column.index !== 5) return
+          const v = String(d.cell.raw).toLowerCase()
+          if (v === 'open')        { d.cell.styles.textColor = [22, 101, 52]; d.cell.styles.fontStyle = 'bold' }
+          else if (v === 'closed') { d.cell.styles.textColor = [185, 28, 28]; d.cell.styles.fontStyle = 'bold' }
+          else                     { d.cell.styles.textColor = [107, 114, 128] }
+        },
       },
-      margin: { left: M, right: M },
-      showHead: 'everyPage',
-      didParseCell: (data: any) => {
-        if (data.section === 'body' && data.column.index === 5) {
-          const v = String(data.cell.raw).toLowerCase()
-          if (v === 'open')        { data.cell.styles.textColor = [22, 101, 52];  data.cell.styles.fontStyle = 'bold' }
-          else if (v === 'closed') { data.cell.styles.textColor = [185, 28, 28];  data.cell.styles.fontStyle = 'bold' }
-          else                     { data.cell.styles.textColor = [107, 114, 128] }
-        }
-      },
-    })
-    y = (doc as any).lastAutoTable.finalY + 14
+    )
   }
 
   // ─── OS DETECTION ─────────────────────────────────────────────────
 
   const hostsWithOs = hosts.filter((h) => h.os && h.os.toLowerCase() !== 'unknown')
   if (hostsWithOs.length > 0) {
-    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
-    y = drawSectionTitle(doc, 'Operating System Detection', y, M, CW)
-
-    autoTable(doc, {
-      startY: y,
-      head: [['IP Address', 'Hostname', 'Normalized OS', 'OS Family', 'Confidence', 'Raw Detection']],
-      body: hostsWithOs.map((h) => [
+    rd.sectionTitle('Operating System Detection')
+    rd.table(
+      [
+        { header: 'IP Address',    width: 26 },
+        { header: 'Hostname',      width: 30 },
+        { header: 'Normalized OS', width: 38 },
+        { header: 'OS Family',     width: 22, align: 'center' },
+        { header: 'Confidence',    width: 20, align: 'center' },
+        { header: 'Raw Detection', width: 46 },
+      ],
+      hostsWithOs.map((h) => [
         h.ip,
         h.hostname ?? '—',
         h.os ?? '—',
         (h.osFamily ?? '—').toUpperCase(),
         h.osConfidence != null ? `${h.osConfidence}%` : '—',
-        h.osRaw ? h.osRaw.slice(0, 50) : '—',
+        h.osRaw ?? '—',
       ]),
-      headStyles: tblHead,
-      styles:     tblBody,
-      columnStyles: {
-        0: { cellWidth: 26 },
-        1: { cellWidth: 30 },
-        2: { cellWidth: 40 },
-        3: { cellWidth: 22 },
-        4: { cellWidth: 20 },
-        5: { cellWidth: 'auto' },
-      },
-      margin: { left: M, right: M },
-      showHead: 'everyPage',
-    })
-    y = (doc as any).lastAutoTable.finalY + 14
+    )
   }
 
-  // ─── SSL/TLS ANALYSIS ─────────────────────────────────────────────
+  // ─── SSL / TLS ────────────────────────────────────────────────────
 
   const sslEndpoints = hosts.flatMap((h) => (h.ssl ?? []).map((s) => ({ ip: h.ip, ...s })))
 
-  if (sslEndpoints.length > 0 || sslFindings.length > 0) {
-    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
-    y = drawSectionTitle(doc, 'SSL/TLS Analysis', y, M, CW)
-
-    if (sslEndpoints.length > 0) {
-      autoTable(doc, {
-        startY: y,
-        head: [['IP Address', 'Port', 'TLS Version', 'Cipher Suite', 'Cert Subject', 'Days Expiry', 'Issues']],
-        body: sslEndpoints.map((s) => {
-          const issues = [
-            s.isExpired    ? 'Expired'     : null,
-            s.expiringSoon ? 'Expiring'    : null,
-            s.isSelfSigned ? 'Self-signed' : null,
-            s.isWeakTls    ? 'Weak TLS'   : null,
-            s.isWeakCipher ? 'Weak Cipher' : null,
-          ].filter(Boolean).join(', ')
-          return [
-            s.ip,
-            String(s.port),
-            s.tlsVersion,
-            s.cipherSuite ? s.cipherSuite.slice(0, 28) : '—',
-            s.subject     ? s.subject.slice(0, 32)     : '—',
-            s.daysUntilExpiry != null ? String(s.daysUntilExpiry) : '—',
-            issues || 'OK',
-          ]
-        }),
-        headStyles: tblHead,
-        styles:     tblBody,
-        columnStyles: {
-          0: { cellWidth: 26 },
-          1: { cellWidth: 11 },
-          2: { cellWidth: 20 },
-          3: { cellWidth: 38 },
-          4: { cellWidth: 34 },
-          5: { cellWidth: 18 },
-          6: { cellWidth: 'auto' },
+  if (sslEndpoints.length > 0) {
+    rd.sectionTitle('SSL/TLS Analysis')
+    rd.table(
+      [
+        { header: 'IP Address',   width: 26 },
+        { header: 'Port',         width: 11, align: 'center' },
+        { header: 'TLS Version',  width: 20, align: 'center' },
+        { header: 'Cipher Suite', width: 38 },
+        { header: 'Cert Subject', width: 34 },
+        { header: 'Days Expiry',  width: 18, align: 'center' },
+        { header: 'Issues',       width: 25 },
+      ],
+      sslEndpoints.map((s) => {
+        const issues = [
+          s.isExpired    ? 'Expired'     : null,
+          s.expiringSoon ? 'Expiring'    : null,
+          s.isSelfSigned ? 'Self-signed' : null,
+          s.isWeakTls    ? 'Weak TLS'    : null,
+          s.isWeakCipher ? 'Weak Cipher' : null,
+        ].filter(Boolean).join(', ')
+        return [
+          s.ip,
+          String(s.port),
+          s.tlsVersion,
+          s.cipherSuite ?? '—',
+          s.subject     ?? '—',
+          s.daysUntilExpiry != null ? String(s.daysUntilExpiry) : '—',
+          issues || 'OK',
+        ]
+      }),
+      {
+        didParseCell: (d: any) => {
+          if (d.section !== 'body' || d.column.index !== 6) return
+          const v = String(d.cell.raw)
+          if (v === 'OK')                 { d.cell.styles.textColor = [22, 101, 52]; d.cell.styles.fontStyle = 'bold' }
+          else if (v.includes('Expired')) { d.cell.styles.textColor = [185, 28, 28]; d.cell.styles.fontStyle = 'bold' }
+          else                            { d.cell.styles.textColor = [154, 52, 18] }
         },
-        margin: { left: M, right: M },
-        showHead: 'everyPage',
-        didParseCell: (data: any) => {
-          if (data.section === 'body' && data.column.index === 6) {
-            const v = String(data.cell.raw)
-            if (v === 'OK')                   { data.cell.styles.textColor = [22, 101, 52]; data.cell.styles.fontStyle = 'bold' }
-            else if (v.includes('Expired'))   { data.cell.styles.textColor = [185, 28, 28]; data.cell.styles.fontStyle = 'bold' }
-            else                              { data.cell.styles.textColor = [154, 52, 18] }
-          }
-        },
-      })
-      y = (doc as any).lastAutoTable.finalY + 14
-    }
+      },
+    )
   }
 
   // ─── DANGEROUS SERVICES ───────────────────────────────────────────
 
   if (svcFindings.length > 0) {
-    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
-    y = drawSectionTitle(doc, 'Dangerous Services', y, M, CW)
-
-    autoTable(doc, {
-      startY: y,
-      head: [['IP Address', 'Port', 'Severity', 'Service / Finding', 'Recommendation']],
-      body: svcFindings.slice(0, 60).map((f) => [
+    rd.sectionTitle('Dangerous Services')
+    rd.table(
+      [
+        { header: 'IP Address',        width: 26 },
+        { header: 'Port',              width: 11, align: 'center' },
+        { header: 'Severity',          width: 20, align: 'center' },
+        { header: 'Service / Finding', width: 44 },
+        { header: 'Recommendation',    width: 61 },
+      ],
+      svcFindings.slice(0, 60).map((f) => [
         f.ip,
         f.port != null ? String(f.port) : '—',
         f.severity.toUpperCase(),
-        f.title.length > 45 ? f.title.slice(0, 43) + '…' : f.title,
-        f.recommendation ? f.recommendation.slice(0, 75) : '—',
+        f.title,
+        f.recommendation ?? '—',
       ]),
-      headStyles: tblHead,
-      styles:     tblBody,
-      columnStyles: {
-        0: { cellWidth: 26 },
-        1: { cellWidth: 11 },
-        2: { cellWidth: 20 },
-        3: { cellWidth: 42 },
-        4: { cellWidth: 'auto' },
-      },
-      margin: { left: M, right: M },
-      showHead: 'everyPage',
-      didParseCell: (data: any) => {
-        if (data.section === 'body' && data.column.index === 2) {
-          const s = String(data.cell.raw).toLowerCase()
-          if (SEV_FILL[s]) {
-            data.cell.styles.fillColor = SEV_FILL[s]
-            data.cell.styles.textColor = SEV_TEXT[s]
-            data.cell.styles.fontStyle = 'bold'
-          }
-        }
-      },
-    })
-    y = (doc as any).lastAutoTable.finalY + 14
+      { didParseCell: (d: any) => ReportDoc.severityCell(d, 2) },
+    )
   }
 
   // ─── CVE CORRELATION ──────────────────────────────────────────────
 
   if (cves.length > 0) {
-    doc.addPage()
-    y = drawPageHeader(doc, target, PW, M)
-    y = drawSectionTitle(doc, 'CVE Correlation', y, M, CW)
+    rd.newPage()
+    rd.sectionTitle('CVE Correlation')
 
-    autoTable(doc, {
-      startY: y,
-      head: [['CVE ID', 'IP Address', 'Technology', 'Version', 'CVSS', 'Severity', 'Exploit']],
-      body: cves.map((c) => [
+    rd.table(
+      [
+        { header: 'CVE ID',     width: 34 },
+        { header: 'IP Address', width: 26 },
+        { header: 'Technology', width: 28 },
+        { header: 'Version',    width: 20 },
+        { header: 'CVSS',       width: 14, align: 'center' },
+        { header: 'Severity',   width: 22, align: 'center' },
+        { header: 'Exploit',    width: 16, align: 'center' },
+      ],
+      cves.map((c) => [
         c.cveId,
         c.ip,
         c.technology,
@@ -1479,256 +1051,145 @@ export async function generateNetworkPdf(data: NetworkReportData): Promise<Blob>
         (c.severity ?? '').toUpperCase(),
         c.exploitAvailable ? 'YES' : 'No',
       ]),
-      headStyles: tblHead,
-      styles:     tblBody,
-      columnStyles: {
-        0: { cellWidth: 34 },
-        1: { cellWidth: 26 },
-        2: { cellWidth: 28 },
-        3: { cellWidth: 20 },
-        4: { cellWidth: 14 },
-        5: { cellWidth: 24 },
-        6: { cellWidth: 'auto' },
+      {
+        didParseCell: (d: any) => {
+          ReportDoc.severityCell(d, 5)
+          if (d.section !== 'body') return
+          if (d.column.index === 6 && String(d.cell.raw) === 'YES') {
+            d.cell.styles.textColor = [185, 28, 28]
+            d.cell.styles.fontStyle = 'bold'
+          }
+          if (d.column.index === 0) {
+            d.cell.styles.textColor = [109, 40, 217]
+            d.cell.styles.fontStyle = 'bold'
+          }
+        },
       },
-      margin: { left: M, right: M },
-      showHead: 'everyPage',
-      didParseCell: (data: any) => {
-        if (data.section === 'body') {
-          if (data.column.index === 5) {
-            const s = String(data.cell.raw).toLowerCase()
-            if (SEV_FILL[s]) {
-              data.cell.styles.fillColor = SEV_FILL[s]
-              data.cell.styles.textColor = SEV_TEXT[s]
-              data.cell.styles.fontStyle = 'bold'
-            }
-          }
-          if (data.column.index === 6 && String(data.cell.raw) === 'YES') {
-            data.cell.styles.textColor = [185, 28, 28]
-            data.cell.styles.fontStyle = 'bold'
-          }
-          if (data.column.index === 0) {
-            data.cell.styles.textColor = [109, 40, 217]
-            data.cell.styles.fontStyle = 'bold'
-          }
-        }
-      },
-    })
-    y = (doc as any).lastAutoTable.finalY + 14
+    )
 
-    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
-    y = drawSectionTitle(doc, 'CVE Details', y, M, CW)
-
+    rd.sectionTitle('CVE Details')
     for (const c of cves.slice(0, 20)) {
-      const descLines = c.description ? doc.splitTextToSize(c.description, CW - 6).length : 0
-      if (y + 10 + descLines * 4.5 > PH - 18) {
-        doc.addPage()
-        y = drawPageHeader(doc, target, PW, M)
-        y += 4
-      }
-
-      doc.setFillColor(245, 245, 255)
-      doc.rect(M, y, CW, 8, 'F')
-      doc.setFillColor(109, 40, 217)
-      doc.rect(M, y, 3, 8, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(8.5)
-      doc.setTextColor(109, 40, 217)
-      doc.text(c.cveId, M + 7, y + 5.5)
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7.5)
-      doc.setTextColor(80, 80, 80)
-      doc.text(
-        `${c.ip}  ·  ${c.technology} ${c.version}  ·  CVSS ${c.cvssScore.toFixed(1)}  ·  ${c.exploitAvailable ? 'EXPLOIT AVAILABLE' : 'No known exploit'}`,
-        PW - M, y + 5.5, { align: 'right' },
-      )
-      y += 10
-
-      if (c.description) {
-        const dl = doc.splitTextToSize(c.description, CW - 6)
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(8)
-        doc.setTextColor(50, 50, 50)
-        doc.text(dl, M + 4, y)
-        y += dl.length * 4.5 + 7
-      } else {
-        y += 5
-      }
-
-      doc.setDrawColor(225, 225, 225)
-      doc.setLineWidth(0.15)
-      doc.line(M, y - 4, PW - M, y - 4)
+      detailCard(rd, {
+        title:  c.cveId,
+        meta:   `${c.ip}  ·  ${c.technology} ${c.version}  ·  CVSS ${c.cvssScore.toFixed(1)}`,
+        fill:   [245, 245, 255],
+        accent: [109, 40, 217],
+        rows:   c.description ? [{ text: c.description }] : [],
+      })
     }
   }
 
-  // ─── NETWORK TIMELINE ─────────────────────────────────────────────
+  // ─── TIMELINE ─────────────────────────────────────────────────────
 
   if (timeline && timeline.changes.length > 0) {
-    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
-    y = drawSectionTitle(doc, 'Network Timeline', y, M, CW)
+    rd.sectionTitle('Network Timeline')
 
-    const tlDate = new Date(timeline.timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-    const tlText =
+    const tlDate = new Date(timeline.timestamp).toLocaleDateString('en-US', {
+      year: 'numeric', month: 'long', day: 'numeric',
+    })
+    rd.paragraph(
       `Timeline event recorded on ${tlDate}. ` +
       `${timeline.changeCount} change${timeline.changeCount !== 1 ? 's' : ''} detected: ` +
       `${timeline.newHosts} new host${timeline.newHosts !== 1 ? 's' : ''}, ` +
       `${timeline.removedHosts} removed, ` +
       `${timeline.portChanges} port change${timeline.portChanges !== 1 ? 's' : ''}, ` +
-      `${timeline.riskChanges} risk change${timeline.riskChanges !== 1 ? 's' : ''}.`
-    const tlLines = doc.splitTextToSize(tlText, CW)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(9)
-    doc.setTextColor(40, 40, 40)
-    doc.text(tlLines, M, y)
-    y += tlLines.length * 5.2 + 8
+      `${timeline.riskChanges} risk change${timeline.riskChanges !== 1 ? 's' : ''}.`,
+      { size: 9 },
+    )
+    rd.space(SPACE.block)
 
-    autoTable(doc, {
-      startY: y,
-      head: [['Event Type', 'Host', 'Details', 'Severity']],
-      body: timeline.changes.slice(0, 30).map((c) => [
+    rd.table(
+      [
+        { header: 'Event Type', width: 32 },
+        { header: 'Host',       width: 28 },
+        { header: 'Details',    width: 82 },
+        { header: 'Severity',   width: 20, align: 'center' },
+      ],
+      timeline.changes.slice(0, 30).map((c) => [
         c.type.replace(/_/g, ' ').toUpperCase(),
         c.host,
         c.details,
         c.severity.toUpperCase(),
       ]),
-      headStyles: tblHead,
-      styles:     tblBody,
-      columnStyles: {
-        0: { cellWidth: 32 },
-        1: { cellWidth: 26 },
-        2: { cellWidth: 'auto' },
-        3: { cellWidth: 20 },
+      {
+        didParseCell: (d: any) => {
+          if (d.section !== 'body' || d.column.index !== 3) return
+          const v = String(d.cell.raw).toLowerCase()
+          if (v === 'critical')     { d.cell.styles.textColor = [185, 28, 28]; d.cell.styles.fontStyle = 'bold' }
+          else if (v === 'warning') { d.cell.styles.textColor = [154, 52, 18] }
+        },
       },
-      margin: { left: M, right: M },
-      showHead: 'everyPage',
-      didParseCell: (data: any) => {
-        if (data.section === 'body' && data.column.index === 3) {
-          const v = String(data.cell.raw).toLowerCase()
-          if (v === 'critical')    { data.cell.styles.textColor = [185, 28, 28]; data.cell.styles.fontStyle = 'bold' }
-          else if (v === 'warning'){ data.cell.styles.textColor = [154, 52, 18] }
-        }
-      },
-    })
-    y = (doc as any).lastAutoTable.finalY + 14
+    )
   }
 
   // ─── RECOMMENDATIONS ──────────────────────────────────────────────
 
   if (findings.length > 0) {
-    doc.addPage()
-    y = drawPageHeader(doc, target, PW, M)
-    y = drawSectionTitle(doc, 'Remediation Recommendations', y, M, CW)
+    rd.newPage()
+    rd.sectionTitle('Remediation Recommendations')
 
-    const sortedF = [...findings].sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
-
+    const sortedF = [...findings].sort(
+      (a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5),
+    )
     sortedF.slice(0, 30).forEach((f, i) => {
-      const rem    = f.recommendation ?? `Review and remediate the "${f.title}" finding per your security policy.`
-      const rl     = doc.splitTextToSize(rem, CW - 24).length
-      const blockH = 9 + rl * 4.5 + 6
-
-      if (y + blockH > PH - 18) {
-        doc.addPage()
-        y = drawPageHeader(doc, target, PW, M)
-        y += 4
-      }
-
-      const sev   = f.severity.toLowerCase()
-      const textC = SEV_TEXT[sev] ?? [75, 85, 99]
-
-      doc.setFillColor(...(SEV_FILL[sev] ?? [243, 244, 246]))
-      doc.roundedRect(M, y, 19, 6.5, 1, 1, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(6.5)
-      doc.setTextColor(...textC)
-      doc.text(sev.toUpperCase(), M + 9.5, y + 4.5, { align: 'center' })
-
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(8.5)
-      doc.setTextColor(15, 15, 15)
-      doc.text(`${i + 1}. ${f.title.length > 70 ? f.title.slice(0, 68) + '…' : f.title}`, M + 23, y + 4.5)
-      y += 9
-
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(8)
-      doc.setTextColor(55, 55, 55)
-      const remLines = doc.splitTextToSize(rem, CW - 24)
-      doc.text(remLines, M + 23, y)
-      y += remLines.length * 4.5 + 6
+      remediationEntry(
+        rd, i + 1, f.severity, f.title,
+        f.recommendation ?? `Review and remediate the "${f.title}" finding per your security policy.`,
+      )
     })
   }
 
   // ─── TECHNICAL APPENDIX ───────────────────────────────────────────
 
-  doc.addPage()
-  y = drawPageHeader(doc, target, PW, M)
-  y = drawSectionTitle(doc, 'Technical Appendix', y, M, CW)
+  rd.newPage()
+  rd.sectionTitle('Technical Appendix')
 
   if (scan?.engines) {
-    const engineRows = Object.entries(scan.engines).map(([engine, state]: [string, any]) => [
-      engine.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
-      (state?.status ?? '—').toUpperCase(),
-      String(state?.count ?? 0),
-    ])
-
-    autoTable(doc, {
-      startY: y,
-      head: [['Scan Engine', 'Status', 'Items Found']],
-      body: engineRows,
-      headStyles: tblHead,
-      styles:     { ...tblBody, cellPadding: 3 },
-      columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 35 }, 2: { cellWidth: 'auto' } },
-      margin: { left: M, right: M },
-      showHead: 'everyPage',
-      didParseCell: (data: any) => {
-        if (data.section === 'body' && data.column.index === 1) {
-          const v = String(data.cell.raw).toLowerCase()
-          if (v === 'completed')     { data.cell.styles.textColor = [22, 101, 52];  data.cell.styles.fontStyle = 'bold' }
-          else if (v === 'failed')   { data.cell.styles.textColor = [185, 28, 28];  data.cell.styles.fontStyle = 'bold' }
-          else if (v === 'running')  { data.cell.styles.textColor = [29, 78, 216] }
-        }
+    rd.table(
+      [
+        { header: 'Scan Engine', width: 60 },
+        { header: 'Status',      width: 35, align: 'center' },
+        { header: 'Items Found', width: 87, align: 'center' },
+      ],
+      Object.entries(scan.engines).map(([engine, state]: [string, any]) => [
+        engine.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+        (state?.status ?? '—').toUpperCase(),
+        String(state?.count ?? 0),
+      ]),
+      {
+        didParseCell: (d: any) => {
+          if (d.section !== 'body' || d.column.index !== 1) return
+          const v = String(d.cell.raw).toLowerCase()
+          if (v === 'completed')     { d.cell.styles.textColor = [22, 101, 52]; d.cell.styles.fontStyle = 'bold' }
+          else if (v === 'failed')   { d.cell.styles.textColor = [185, 28, 28]; d.cell.styles.fontStyle = 'bold' }
+          else if (v === 'running')  { d.cell.styles.textColor = [29, 78, 216] }
+        },
       },
-    })
-    y = (doc as any).lastAutoTable.finalY + 14
+    )
   }
 
   if (hosts.length > 0) {
-    if (y > PH - 55) { doc.addPage(); y = drawPageHeader(doc, target, PW, M) }
-    y = drawSectionTitle(doc, 'Risk Score Distribution', y, M, CW)
-
+    rd.sectionTitle('Risk Score Distribution')
     const rl = (level: string) => hosts.filter((h) => h.riskLevel === level).length
-    autoTable(doc, {
-      startY: y,
-      head: [['Risk Level', 'Host Count', '% of Hosts', 'Score Range']],
-      body: [
-        ['Critical', rl('critical'), `${Math.round(rl('critical') / hosts.length * 100)}%`, '71–100'],
-        ['High',     rl('high'),     `${Math.round(rl('high')     / hosts.length * 100)}%`, '41–70'],
-        ['Medium',   rl('medium'),   `${Math.round(rl('medium')   / hosts.length * 100)}%`, '21–40'],
-        ['Low',      rl('low'),      `${Math.round(rl('low')      / hosts.length * 100)}%`, '0–20'],
+    rd.table(
+      [
+        { header: 'Risk Level',  width: 45 },
+        { header: 'Host Count',  width: 35, align: 'center' },
+        { header: '% of Hosts',  width: 35, align: 'center' },
+        { header: 'Score Range', width: 67, align: 'center' },
       ],
-      headStyles: tblHead,
-      styles:     { ...tblBody, cellPadding: 3 },
-      columnStyles: { 0: { cellWidth: 35 }, 1: { cellWidth: 30 }, 2: { cellWidth: 30 }, 3: { cellWidth: 'auto' } },
-      margin: { left: M, right: M },
-      showHead: 'everyPage',
-    })
+      [
+        ['Critical', rl('critical'), `${Math.round((rl('critical') / hosts.length) * 100)}%`, '71–100'],
+        ['High',     rl('high'),     `${Math.round((rl('high')     / hosts.length) * 100)}%`, '41–70'],
+        ['Medium',   rl('medium'),   `${Math.round((rl('medium')   / hosts.length) * 100)}%`, '21–40'],
+        ['Low',      rl('low'),      `${Math.round((rl('low')      / hosts.length) * 100)}%`, '0–20'],
+      ],
+      { didParseCell: (d: any) => ReportDoc.severityCell(d, 0) },
+    )
   }
 
-  // ─── PAGE NUMBERS (skip cover) ────────────────────────────────────
-
-  const total = (doc.internal as any).getNumberOfPages()
-  for (let p = 2; p <= total; p++) {
-    doc.setPage(p)
-    doc.setDrawColor(210, 210, 210)
-    doc.setLineWidth(0.2)
-    doc.line(M, PH - 11, PW - M, PH - 11)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6.5)
-    doc.setTextColor(150, 150, 150)
-    doc.text(`Report ID: ${reportId}`, M, PH - 6)
-    doc.text(`Page ${p - 1} of ${total - 1}`, PW - M, PH - 6, { align: 'right' })
-    doc.text('CONFIDENTIAL', PW / 2, PH - 6, { align: 'center' })
-  }
-
-  return doc.output('blob') as unknown as Blob
+  rd.drawFooters(reportId)
+  return rd.doc.output('blob') as unknown as Blob
 }
 
 export async function generateNetworkExcel(data: NetworkReportData): Promise<Blob> {
@@ -1827,6 +1288,772 @@ export async function generateNetworkExcel(data: NetworkReportData): Promise<Blo
   ])
   ws5['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 14 }, { wch: 60 }]
   XLSX.utils.book_append_sheet(wb, ws5, 'CVE Intelligence')
+
+  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+  return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+}
+
+// ── SAST Report ────────────────────────────────────────────────────────
+//
+// Built on the existing SAST pipeline: scans live in users/{uid}/sast_scans
+// and findings in users/{uid}/sast_findings (written by the SAST scanner via
+// lib/firestore-sast-*.ts). Nothing here re-scans or re-analyses anything —
+// it reads what the scanner already produced and renders it through the same
+// ReportDoc layout engine used by the web and network reports.
+
+export interface SastReportData {
+  projectName: string
+  scan:        FirestoreSastScan | null
+  findings:    FirestoreSastFinding[]
+  reportId:    string
+  generatedBy: string
+}
+
+export interface SastReportTarget {
+  projectName:    string
+  scanId:         string
+  findingsCount:  number
+  secretsCount:   number
+  depVulnCount:   number
+  language:       string
+  uploadMethod:   string
+  latestScan:     FirestoreSastScan | null
+  latestScanDate: string
+  latestStatus:   string
+}
+
+/** Human label for the source of a SAST scan. */
+function sastSourceLabel(scan: FirestoreSastScan | null): string {
+  if (!scan) return '—'
+  if (scan.repoProvider && scan.repoOwner && scan.repoName) {
+    return `${scan.repoProvider === 'github' ? 'GitHub' : 'GitLab'}: ${scan.repoOwner}/${scan.repoName}`
+  }
+  return scan.uploadMethod === 'zip' ? 'ZIP upload'
+       : scan.uploadMethod === 'directory' ? 'Directory upload'
+       : scan.uploadMethod ?? '—'
+}
+
+const SAST_CATEGORY_LABEL: Record<string, string> = {
+  secret:     'Secret',
+  owasp:      'Code',
+  dependency: 'Dependency',
+}
+
+/**
+ * One reportable entry per SAST project, using its most recent scan — mirrors
+ * how web/network reports pick the latest scan for a target.
+ */
+export async function getSastReportableProjects(uid: string): Promise<SastReportTarget[]> {
+  const scansSnap = await getDocs(collection(db, 'users', uid, 'sast_scans'))
+  const allScans  = scansSnap.docs.map((d) => d.data() as FirestoreSastScan)
+
+  const byProject = new Map<string, FirestoreSastScan[]>()
+  allScans.forEach((s) => {
+    const key = s.projectName || s.scanId
+    if (!byProject.has(key)) byProject.set(key, [])
+    byProject.get(key)!.push(s)
+  })
+
+  const result: SastReportTarget[] = []
+
+  for (const [projectName, scans] of byProject) {
+    const sorted = scans.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    )
+    const latestScan = sorted[0]
+    const findingsCount = latestScan.totalFindings ?? 0
+    const secretsCount  = latestScan.secretFindings ?? 0
+    const depVulnCount  = latestScan.dependencyVulns ?? 0
+
+    // Skip scans that produced nothing at all.
+    if (findingsCount === 0 && secretsCount === 0 && depVulnCount === 0) continue
+
+    result.push({
+      projectName,
+      scanId:         latestScan.scanId,
+      findingsCount,
+      secretsCount,
+      depVulnCount,
+      language:       latestScan.language || '—',
+      uploadMethod:   latestScan.uploadMethod ?? '—',
+      latestScan,
+      latestScanDate: latestScan.completedAt ?? latestScan.createdAt,
+      latestStatus:   latestScan.status,
+    })
+  }
+
+  return result.sort((a, b) => b.findingsCount - a.findingsCount || b.secretsCount - a.secretsCount)
+}
+
+/** Load a SAST scan plus its findings, scoped to the org/user that owns it. */
+export async function fetchSastReportData(uid: string, scanId: string): Promise<{
+  scan: FirestoreSastScan | null
+  findings: FirestoreSastFinding[]
+}> {
+  const [scanSnap, findingsSnap] = await Promise.all([
+    getDocs(query(collection(db, 'users', uid, 'sast_scans'), where('scanId', '==', scanId))),
+    getDocs(query(collection(db, 'users', uid, 'sast_findings'), where('scanId', '==', scanId))),
+  ])
+
+  const scan = scanSnap.docs.length > 0
+    ? (scanSnap.docs[0].data() as FirestoreSastScan)
+    : null
+
+  const findings = findingsSnap.docs
+    .map((d) => d.data() as FirestoreSastFinding)
+    .sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
+
+  return { scan, findings }
+}
+
+export async function generateSastPdf(data: SastReportData): Promise<Blob> {
+  const { projectName, scan, findings, reportId, generatedBy } = data
+
+  const rd = await createReportDoc(`SAST Assessment | ${projectName}`)
+  const C  = severityCounts(findings)
+  const risk = computeOverallRisk(C)
+
+  const scanDate = new Date(scan?.completedAt ?? scan?.createdAt ?? Date.now()).toLocaleDateString(
+    'en-US', { year: 'numeric', month: 'long', day: 'numeric' },
+  )
+
+  const secrets     = findings.filter((f) => f.category === 'secret')
+  const dependency  = findings.filter((f) => f.category === 'dependency')
+  const codeIssues  = findings.filter((f) => f.category === 'owasp')
+  const withCve     = dependency.filter((f) => f.cveId)
+  const languages   = (scan?.language ?? '')
+    .split(/[,/]/).map((s) => s.trim()).filter(Boolean)
+
+  // ─── COVER ────────────────────────────────────────────────────────
+
+  drawCover(rd, {
+    kicker:   'STATIC APPLICATION SECURITY TESTING',
+    subtitle: 'Source Code Security Assessment',
+    target:   projectName,
+    stats: [
+      { label: 'Total Findings',  value: String(findings.length),        color: COLOR.ink },
+      { label: 'Critical',        value: String(C.critical),             color: SEV_TEXT.critical },
+      { label: 'High',            value: String(C.high),                 color: SEV_TEXT.high },
+      { label: 'Secrets',         value: String(secrets.length),         color: COLOR.accent },
+      { label: 'Medium',          value: String(C.medium),               color: SEV_TEXT.medium },
+      { label: 'Low',             value: String(C.low),                  color: SEV_TEXT.low },
+      { label: 'Dependency Vulns', value: String(dependency.length),     color: [29, 78, 216] },
+      { label: 'Files Scanned',   value: String(scan?.scannedFiles ?? 0), color: COLOR.ink },
+    ],
+    meta: [
+      ['Assessment Date', scanDate],
+      ['Source',          sastSourceLabel(scan)],
+      ['Languages',       languages.join(', ') || '—'],
+      ['Generated By',    generatedBy],
+      ['Report ID',       reportId],
+      ['Classification',  'CONFIDENTIAL'],
+    ],
+  })
+
+  // ─── EXECUTIVE SUMMARY ────────────────────────────────────────────
+
+  rd.newPage()
+  rd.sectionTitle('Executive Summary')
+
+  rd.paragraph(
+    `This static application security assessment analysed the source code of ${projectName} on ${scanDate}. ` +
+    `${scan?.scannedFiles ?? 0} of ${scan?.totalFiles ?? 0} file${(scan?.totalFiles ?? 0) !== 1 ? 's' : ''} were scanned, ` +
+    `identifying ${findings.length} finding${findings.length !== 1 ? 's' : ''}. ` +
+    (secrets.length > 0
+      ? `${secrets.length} hardcoded secret${secrets.length !== 1 ? 's' : ''} or credential${secrets.length !== 1 ? 's' : ''} were detected and require immediate rotation. `
+      : '') +
+    (dependency.length > 0
+      ? `${dependency.length} vulnerable dependenc${dependency.length !== 1 ? 'ies were' : 'y was'} identified` +
+        (withCve.length > 0 ? `, ${withCve.length} with an associated CVE` : '') + '. '
+      : '') +
+    'Findings are mapped to CWE and OWASP categories and prioritized for remediation.',
+    { size: 9 },
+  )
+  rd.space(SPACE.block)
+
+  rd.badge(`OVERALL RISK: ${risk.label.toUpperCase()}`, risk.rgb)
+  rd.space(SPACE.block)
+
+  severityBreakdownTable(rd, C, findings.length)
+
+  // ─── SCAN & SOURCE INFORMATION ────────────────────────────────────
+
+  rd.sectionTitle('Scan & Source Information')
+
+  const scanRows: [string, string][] = [
+    ['Project',        projectName],
+    ['Scan ID',        scan?.scanId ?? '—'],
+    ['Source',         sastSourceLabel(scan)],
+    ['Languages',      languages.join(', ') || '—'],
+    ['Files Scanned',  `${scan?.scannedFiles ?? 0} of ${scan?.totalFiles ?? 0}`],
+    ['Status',         (scan?.status ?? '—').toUpperCase()],
+    ['Duration',       scan?.duration ?? '—'],
+  ]
+  if (scan?.repoBranch)        scanRows.push(['Branch',         scan.repoBranch])
+  if (scan?.repoCommitSha)     scanRows.push(['Commit',         scan.repoCommitSha.slice(0, 12)])
+  if (scan?.repoCommitAuthor)  scanRows.push(['Commit Author',  scan.repoCommitAuthor])
+  if (scan?.repoCommitDate) {
+    scanRows.push(['Commit Date', new Date(scan.repoCommitDate).toLocaleDateString('en-US', {
+      year: 'numeric', month: 'long', day: 'numeric',
+    })])
+  }
+  if (scan?.repoCommitMessage) scanRows.push(['Commit Message', scan.repoCommitMessage])
+
+  rd.metaRows(scanRows, 46)
+  rd.space(SPACE.section)
+
+  // ─── FINDINGS SUMMARY ─────────────────────────────────────────────
+
+  if (findings.length > 0) {
+    rd.newPage()
+    rd.sectionTitle('Findings Summary')
+
+    rd.table(
+      [
+        { header: '#',        width: 8,  align: 'center' },
+        { header: 'Issue',    width: 52 },
+        { header: 'Severity', width: 20, align: 'center' },
+        { header: 'Type',     width: 22, align: 'center' },
+        { header: 'CWE',      width: 20, align: 'center' },
+        { header: 'Location', width: 44 },
+      ],
+      findings.map((f, i) => [
+        i + 1,
+        f.title,
+        (f.severity ?? '').toUpperCase(),
+        SAST_CATEGORY_LABEL[f.category] ?? f.category,
+        f.cweId || '—',
+        f.file ? `${f.file}${f.line ? `:${f.line}` : ''}` : '—',
+      ]),
+      { didParseCell: (d: any) => ReportDoc.severityCell(d, 2) },
+    )
+
+    // ─── DETAILED FINDINGS ──────────────────────────────────────────
+
+    rd.sectionTitle('Detailed Findings')
+
+    for (const f of findings.slice(0, 40)) {
+      const sev = (f.severity ?? '').toLowerCase()
+      detailCard(rd, {
+        title:  f.title,
+        meta:   `${sev.toUpperCase()}  ·  ${SAST_CATEGORY_LABEL[f.category] ?? f.category}`,
+        fill:   SEV_FILL[sev] ?? SEV_FILL.unknown,
+        accent: SEV_TEXT[sev] ?? SEV_TEXT.unknown,
+        rows: [
+          ...(f.file ? [{ label: 'Location', text: `${f.file}${f.line ? `:${f.line}` : ''}`, size: 7.5 }] : []),
+          ...(f.description ? [{ text: f.description }] : []),
+          ...(f.code ? [{ label: 'Code', text: f.code, size: 7.5 }] : []),
+          ...(f.cweId ? [{ label: 'CWE', text: `${f.cweId}${f.cweName ? ` — ${f.cweName}` : ''}`, size: 7.5 }] : []),
+          ...(f.owaspCategory ? [{ label: 'OWASP', text: f.owaspCategory, size: 7.5 }] : []),
+          ...(f.dependencyName
+            ? [{ label: 'Dependency', text: `${f.dependencyName}${f.dependencyVersion ? `@${f.dependencyVersion}` : ''}`, size: 7.5 }]
+            : []),
+          ...(f.cveId
+            ? [{ label: 'CVE', text: `${f.cveId}${f.cvssScore != null ? ` (CVSS ${f.cvssScore.toFixed(1)})` : ''}`, size: 7.5 }]
+            : []),
+          ...(f.recommendation
+            ? [{ label: 'Remediation', text: f.recommendation, style: 'italic' as const, size: 7.5 }]
+            : []),
+        ],
+      })
+    }
+  }
+
+  // ─── SECRETS ──────────────────────────────────────────────────────
+
+  if (secrets.length > 0) {
+    rd.newPage()
+    rd.sectionTitle('Hardcoded Secrets & Credentials')
+
+    rd.paragraph(
+      'Secrets committed to source control must be treated as compromised. Rotate each credential ' +
+      'below, then purge it from the repository history.',
+      { size: 8.5, color: COLOR.muted },
+    )
+    rd.space(SPACE.block)
+
+    rd.table(
+      [
+        { header: 'Secret Type', width: 42 },
+        { header: 'Severity',    width: 20, align: 'center' },
+        { header: 'File',        width: 68 },
+        { header: 'Line',        width: 14, align: 'center' },
+        { header: 'CWE',         width: 22, align: 'center' },
+      ],
+      secrets.map((f) => [
+        f.type || f.title,
+        (f.severity ?? '').toUpperCase(),
+        f.file || '—',
+        f.line ? String(f.line) : '—',
+        f.cweId || '—',
+      ]),
+      { didParseCell: (d: any) => ReportDoc.severityCell(d, 1) },
+    )
+  }
+
+  // ─── DEPENDENCY VULNERABILITIES ───────────────────────────────────
+
+  if (dependency.length > 0) {
+    rd.sectionTitle('Dependency Vulnerabilities')
+
+    rd.table(
+      [
+        { header: 'Dependency', width: 42 },
+        { header: 'Version',    width: 22, align: 'center' },
+        { header: 'CVE',        width: 32, align: 'center' },
+        { header: 'CVSS',       width: 14, align: 'center' },
+        { header: 'Severity',   width: 20, align: 'center' },
+        { header: 'Issue',      width: 36 },
+      ],
+      dependency.map((f) => [
+        f.dependencyName || '—',
+        f.dependencyVersion || '—',
+        f.cveId || '—',
+        f.cvssScore != null ? f.cvssScore.toFixed(1) : '—',
+        (f.severity ?? '').toUpperCase(),
+        f.title,
+      ]),
+      {
+        didParseCell: (d: any) => {
+          ReportDoc.severityCell(d, 4)
+          if (d.section === 'body' && d.column.index === 2 && String(d.cell.raw).startsWith('CVE')) {
+            d.cell.styles.textColor = [109, 40, 217]
+            d.cell.styles.fontStyle = 'bold'
+          }
+        },
+      },
+    )
+  }
+
+  // ─── CWE / OWASP DISTRIBUTION ─────────────────────────────────────
+
+  const groupCount = (items: FirestoreSastFinding[], key: (f: FirestoreSastFinding) => string) => {
+    const m = new Map<string, number>()
+    for (const f of items) {
+      const k = key(f)
+      if (!k) continue
+      m.set(k, (m.get(k) ?? 0) + 1)
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1])
+  }
+
+  const cweGroups   = groupCount(findings, (f) => (f.cweId ? `${f.cweId}|${f.cweName ?? ''}` : ''))
+  const owaspGroups = groupCount(findings, (f) => f.owaspCategory ?? '')
+
+  if (cweGroups.length > 0) {
+    rd.sectionTitle('CWE Distribution')
+    rd.table(
+      [
+        { header: 'CWE ID',   width: 26, align: 'center' },
+        { header: 'Weakness', width: 96 },
+        { header: 'Findings', width: 20, align: 'center' },
+        { header: '% of Total', width: 24, align: 'center' },
+      ],
+      cweGroups.map(([k, n]) => {
+        const [id, name] = k.split('|')
+        return [
+          id,
+          name || '—',
+          n,
+          findings.length ? `${Math.round((n / findings.length) * 100)}%` : '0%',
+        ]
+      }),
+    )
+  }
+
+  if (owaspGroups.length > 0) {
+    rd.sectionTitle('OWASP Category Mapping')
+    rd.table(
+      [
+        { header: 'OWASP Category', width: 118 },
+        { header: 'Findings',       width: 22, align: 'center' },
+        { header: '% of Total',     width: 26, align: 'center' },
+      ],
+      owaspGroups.map(([name, n]) => [
+        name,
+        n,
+        findings.length ? `${Math.round((n / findings.length) * 100)}%` : '0%',
+      ]),
+    )
+  }
+
+  // ─── RECOMMENDATIONS ──────────────────────────────────────────────
+
+  if (findings.length > 0) {
+    rd.newPage()
+    rd.sectionTitle('Remediation Recommendations')
+
+    const sorted = [...findings].sort(
+      (a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5),
+    )
+    sorted.slice(0, 30).forEach((f, i) => {
+      const where = f.file ? ` (${f.file}${f.line ? `:${f.line}` : ''})` : ''
+      remediationEntry(
+        rd, i + 1, f.severity, f.title,
+        (f.recommendation ?? `Review and remediate the "${f.title}" issue per your secure coding policy.`) + where,
+      )
+    })
+  }
+
+  rd.drawFooters(reportId)
+  return rd.doc.output('blob') as unknown as Blob
+}
+
+export async function generateSastExcel(data: SastReportData): Promise<Blob> {
+  const XLSX = await import('xlsx')
+
+  const { projectName, scan, findings, reportId, generatedBy } = data
+
+  const C          = severityCounts(findings)
+  const secrets    = findings.filter((f) => f.category === 'secret')
+  const dependency = findings.filter((f) => f.category === 'dependency')
+
+  const wb = XLSX.utils.book_new()
+
+  // Summary
+  const ws1 = XLSX.utils.aoa_to_sheet([
+    ['Vectra SAST Security Report'],
+    [],
+    ['Project',        projectName],
+    ['Scan ID',        scan?.scanId ?? '—'],
+    ['Source',         sastSourceLabel(scan)],
+    ['Languages',      scan?.language ?? '—'],
+    ['Files Scanned',  `${scan?.scannedFiles ?? 0} of ${scan?.totalFiles ?? 0}`],
+    ['Status',         scan?.status ?? '—'],
+    ['Duration',       scan?.duration ?? '—'],
+    ['Report ID',      reportId],
+    ['Generated By',   generatedBy],
+    ['Generated At',   new Date().toISOString()],
+    [],
+    ['Severity', 'Count'],
+    ['Critical', C.critical],
+    ['High',     C.high],
+    ['Medium',   C.medium],
+    ['Low',      C.low],
+    ['Info',     C.info],
+    ['Total',    findings.length],
+    [],
+    ['Secrets',                secrets.length],
+    ['Dependency Vulnerabilities', dependency.length],
+  ])
+  ws1['!cols'] = [{ wch: 28 }, { wch: 60 }]
+  XLSX.utils.book_append_sheet(wb, ws1, 'Summary')
+
+  // Findings
+  const ws2 = XLSX.utils.aoa_to_sheet([
+    ['#', 'Title', 'Severity', 'Category', 'Type', 'File', 'Line', 'CWE ID', 'CWE Name', 'OWASP', 'Description', 'Code', 'Recommendation'],
+    ...findings.map((f, i) => [
+      i + 1, f.title, f.severity, f.category, f.type,
+      f.file, f.line, f.cweId, f.cweName, f.owaspCategory,
+      f.description, f.code, f.recommendation,
+    ]),
+  ])
+  ws2['!cols'] = [
+    { wch: 6 }, { wch: 46 }, { wch: 10 }, { wch: 12 }, { wch: 20 },
+    { wch: 44 }, { wch: 8 }, { wch: 12 }, { wch: 34 }, { wch: 30 },
+    { wch: 70 }, { wch: 50 }, { wch: 70 },
+  ]
+  XLSX.utils.book_append_sheet(wb, ws2, 'Findings')
+
+  // Secrets
+  if (secrets.length > 0) {
+    const ws3 = XLSX.utils.aoa_to_sheet([
+      ['Secret Type', 'Severity', 'File', 'Line', 'CWE ID', 'Recommendation'],
+      ...secrets.map((f) => [f.type || f.title, f.severity, f.file, f.line, f.cweId, f.recommendation]),
+    ])
+    ws3['!cols'] = [{ wch: 30 }, { wch: 10 }, { wch: 50 }, { wch: 8 }, { wch: 12 }, { wch: 70 }]
+    XLSX.utils.book_append_sheet(wb, ws3, 'Secrets')
+  }
+
+  // Dependencies
+  if (dependency.length > 0) {
+    const ws4 = XLSX.utils.aoa_to_sheet([
+      ['Dependency', 'Version', 'CVE', 'CVSS', 'Severity', 'Issue', 'Recommendation'],
+      ...dependency.map((f) => [
+        f.dependencyName, f.dependencyVersion, f.cveId, f.cvssScore,
+        f.severity, f.title, f.recommendation,
+      ]),
+    ])
+    ws4['!cols'] = [{ wch: 30 }, { wch: 14 }, { wch: 18 }, { wch: 8 }, { wch: 10 }, { wch: 46 }, { wch: 70 }]
+    XLSX.utils.book_append_sheet(wb, ws4, 'Dependencies')
+  }
+
+  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+  return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+}
+
+// ── Cloud Security report ─────────────────────────────────────────────
+//
+// Data comes from GET /cloud/report-data, which the backend scopes to the
+// caller's organization (and optionally one integration). Layout reuses the
+// same ReportDoc engine, cover, tables and cards as the other reports.
+
+export interface CloudReportData {
+  scopeLabel:   string
+  integrations: CloudIntegration[]
+  findings:     CloudFinding[]
+  assets:       CloudAsset[]
+  truncated:    boolean
+  reportId:     string
+  generatedBy:  string
+}
+
+function cloudLocation(f: CloudFinding): string {
+  return [f.accountId, f.region].filter(Boolean).join(' · ') || '—'
+}
+
+export async function generateCloudPdf(data: CloudReportData): Promise<Blob> {
+  const { scopeLabel, integrations, findings, assets, truncated, reportId, generatedBy } = data
+
+  const rd   = await createReportDoc(`Cloud Security | ${scopeLabel}`)
+  const C    = severityCounts(findings)
+  const risk = computeOverallRisk(C)
+  const genDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  const providers = [...new Set(integrations.map((i) => i.provider))]
+  const withCve   = findings.filter((f) => f.cveId)
+  const lastSync  = integrations.map((i) => i.lastSyncAt).filter(Boolean).sort().pop()
+
+  // ─── COVER ────────────────────────────────────────────────────────
+
+  drawCover(rd, {
+    kicker:   'CLOUD SECURITY',
+    subtitle: 'Cloud Security Findings Assessment',
+    target:   scopeLabel,
+    stats: [
+      { label: 'Findings',   value: String(findings.length),     color: COLOR.ink },
+      { label: 'Critical',   value: String(C.critical),          color: SEV_TEXT.critical },
+      { label: 'High',       value: String(C.high),              color: SEV_TEXT.high },
+      { label: 'Assets',     value: String(assets.length),       color: COLOR.accent },
+      { label: 'Medium',     value: String(C.medium),            color: SEV_TEXT.medium },
+      { label: 'Low',        value: String(C.low),               color: SEV_TEXT.low },
+      { label: 'With CVE',   value: String(withCve.length),      color: [109, 40, 217] },
+      { label: 'Accounts',   value: String(integrations.length), color: COLOR.ink },
+    ],
+    meta: [
+      ['Report Date',    genDate],
+      ['Providers',      providers.map(providerLabel).join(', ') || '—'],
+      ['Last Sync',      lastSync ? new Date(lastSync).toLocaleString('en-US') : '—'],
+      ['Generated By',   generatedBy],
+      ['Report ID',      reportId],
+      ['Classification', 'CONFIDENTIAL'],
+    ],
+  })
+
+  // ─── EXECUTIVE SUMMARY ────────────────────────────────────────────
+
+  rd.newPage()
+  rd.sectionTitle('Executive Summary')
+  rd.paragraph(
+    `This report summarizes the open security findings imported from ${integrations.length} connected cloud ` +
+    `account${integrations.length !== 1 ? 's' : ''} (${providers.map(providerLabel).join(' and ') || 'no providers'}) as of ${genDate}. ` +
+    `${findings.length} finding${findings.length !== 1 ? 's' : ''} affect ${assets.length} cloud resource${assets.length !== 1 ? 's' : ''}` +
+    (withCve.length ? `, including ${withCve.length} linked to a published CVE` : '') + '. ' +
+    'Findings are reported by each provider\'s native security service and normalized by Vectra; ' +
+    'severity reflects the provider\'s rating.' +
+    (truncated ? ' This report was limited to the first 5,000 findings.' : ''),
+    { size: 9 },
+  )
+  rd.space(SPACE.block)
+  rd.badge(`OVERALL RISK: ${risk.label.toUpperCase()}`, risk.rgb)
+  rd.space(SPACE.block)
+  severityBreakdownTable(rd, C, findings.length)
+
+  // ─── PROVIDER SUMMARY ─────────────────────────────────────────────
+
+  rd.sectionTitle('Cloud Provider Summary')
+  rd.table(
+    [
+      { header: 'Integration', width: 44 },
+      { header: 'Provider',    width: 24 },
+      { header: 'Account',     width: 34 },
+      { header: 'Findings',    width: 18, align: 'center' },
+      { header: 'Critical',    width: 16, align: 'center' },
+      { header: 'Last Sync',   width: 30, align: 'center' },
+    ],
+    integrations.map((i) => {
+      const own = findings.filter((f) => f.integrationId === i.integrationId)
+      return [
+        i.displayName,
+        providerLabel(i.provider),
+        i.accountId ?? '—',
+        own.length,
+        own.filter((f) => f.severity === 'critical').length,
+        i.lastSyncAt ? new Date(i.lastSyncAt).toLocaleDateString('en-US') : 'Never',
+      ]
+    }),
+  )
+
+  for (const p of providers) {
+    const pf = findings.filter((f) => f.provider === p)
+    const pc = severityCounts(pf)
+    rd.paragraph(
+      `${providerLabel(p)}: ${pf.length} findings — ${pc.critical} critical, ${pc.high} high, ${pc.medium} medium, ${pc.low} low, ${pc.info} informational.`,
+      { size: 8.5, color: COLOR.muted },
+    )
+  }
+  rd.space(SPACE.section)
+
+  // ─── AFFECTED ASSETS ──────────────────────────────────────────────
+
+  if (assets.length > 0) {
+    rd.sectionTitle('Affected Assets')
+    rd.table(
+      [
+        { header: 'Resource',  width: 62 },
+        { header: 'Type',      width: 38 },
+        { header: 'Provider',  width: 22 },
+        { header: 'Region',    width: 24 },
+        { header: 'Open',      width: 20, align: 'center' },
+      ],
+      assets.slice(0, 60).map((a) => [
+        truncUrl(a.resourceName ?? a.resourceId, 48),
+        a.resourceType,
+        providerLabel(a.provider),
+        a.region ?? '—',
+        a.openFindingCount,
+      ]),
+    )
+    if (assets.length > 60) {
+      rd.paragraph(`${assets.length - 60} additional assets are listed in the Excel export.`, { size: 8, color: COLOR.muted })
+    }
+  }
+
+  // ─── FINDINGS SUMMARY ─────────────────────────────────────────────
+
+  if (findings.length > 0) {
+    rd.newPage()
+    rd.sectionTitle('Findings Summary')
+    rd.table(
+      [
+        { header: '#',        width: 8,  align: 'center' },
+        { header: 'Finding',  width: 60 },
+        { header: 'Severity', width: 20, align: 'center' },
+        { header: 'Provider', width: 20, align: 'center' },
+        { header: 'Resource', width: 58 },
+      ],
+      findings.map((f, i) => [
+        i + 1,
+        f.title,
+        f.severity.toUpperCase(),
+        providerLabel(f.provider),
+        truncUrl(f.resourceName ?? f.resourceId, 44),
+      ]),
+      { didParseCell: (d: any) => ReportDoc.severityCell(d, 2) },
+    )
+
+    // ─── CVE INFORMATION ────────────────────────────────────────────
+
+    if (withCve.length > 0) {
+      rd.sectionTitle('Vulnerabilities (CVE)')
+      rd.table(
+        [
+          { header: 'CVE',      width: 32, align: 'center' },
+          { header: 'CVSS',     width: 14, align: 'center' },
+          { header: 'Severity', width: 20, align: 'center' },
+          { header: 'Package',  width: 40 },
+          { header: 'Resource', width: 60 },
+        ],
+        withCve.map((f) => {
+          const pkg = f.affectedPackages?.[0]
+          return [
+            f.cveIds.join(', '),
+            f.cvssScore != null ? f.cvssScore.toFixed(1) : '—',
+            f.severity.toUpperCase(),
+            pkg ? `${pkg.name}${pkg.version ? ` ${pkg.version}` : ''}${pkg.fixedInVersion ? ` (fixed in ${pkg.fixedInVersion})` : ''}` : '—',
+            truncUrl(f.resourceName ?? f.resourceId, 44),
+          ]
+        }),
+        { didParseCell: (d: any) => ReportDoc.severityCell(d, 2) },
+      )
+    }
+
+    // ─── DETAILED FINDINGS ──────────────────────────────────────────
+
+    rd.sectionTitle('Detailed Findings')
+    for (const f of findings.slice(0, 40)) {
+      const sev = f.severity
+      detailCard(rd, {
+        title:  f.title,
+        meta:   `${sev.toUpperCase()}  ·  ${providerLabel(f.provider)}`,
+        fill:   SEV_FILL[sev] ?? SEV_FILL.unknown,
+        accent: SEV_TEXT[sev] ?? SEV_TEXT.unknown,
+        rows: [
+          { label: 'Resource', text: `${f.resourceId ?? '—'}${f.resourceType ? ` (${f.resourceType})` : ''}`, size: 7.5 },
+          { label: 'Location', text: cloudLocation(f), size: 7.5 },
+          ...(f.findingType ? [{ label: 'Type', text: f.findingType, size: 7.5 }] : []),
+          ...(f.description ? [{ text: f.description }] : []),
+          ...(f.cveId ? [{ label: 'CVE', text: `${f.cveIds.join(', ')}${f.cvssScore != null ? ` (CVSS ${f.cvssScore.toFixed(1)})` : ''}`, size: 7.5 }] : []),
+          ...(f.compliance?.securityControlId ? [{ label: 'Control', text: f.compliance.securityControlId, size: 7.5 }] : []),
+          ...(f.recommendation ? [{ label: 'Remediation', text: f.recommendation, style: 'italic' as const, size: 7.5 }] : []),
+          ...(f.remediationUrl || f.sourceUrl ? [{ label: 'Reference', text: (f.remediationUrl ?? f.sourceUrl)!, size: 7 }] : []),
+          { label: 'Timeline', text: `First seen ${new Date(f.firstSeenAt).toLocaleDateString('en-US')} · last seen ${new Date(f.lastSeenAt).toLocaleDateString('en-US')}`, size: 7 },
+        ],
+      })
+    }
+    if (findings.length > 40) {
+      rd.paragraph(`${findings.length - 40} further findings are included in the summary table and the Excel export.`, { size: 8, color: COLOR.muted })
+    }
+
+    // ─── RECOMMENDATIONS ────────────────────────────────────────────
+
+    rd.newPage()
+    rd.sectionTitle('Remediation Recommendations')
+    findings.slice(0, 30).forEach((f, i) => {
+      remediationEntry(
+        rd, i + 1, f.severity, f.title,
+        (f.recommendation ?? `Review "${f.title}" in ${providerLabel(f.provider)} and remediate per your cloud security policy.`) +
+        ` (${f.resourceName ?? f.resourceId ?? 'resource'}${f.region ? `, ${f.region}` : ''})`,
+      )
+    })
+  }
+
+  rd.drawFooters(reportId)
+  return rd.doc.output('blob') as unknown as Blob
+}
+
+export async function generateCloudExcel(data: CloudReportData): Promise<Blob> {
+  const XLSX = await import('xlsx')
+  const { scopeLabel, integrations, findings, assets, reportId, generatedBy, truncated } = data
+  const C = severityCounts(findings)
+  const wb = XLSX.utils.book_new()
+
+  const ws1 = XLSX.utils.aoa_to_sheet([
+    ['Vectra Cloud Security Report'],
+    [],
+    ['Scope',        scopeLabel],
+    ['Report ID',    reportId],
+    ['Generated By', generatedBy],
+    ['Generated At', new Date().toISOString()],
+    ['Truncated',    truncated ? 'Yes (first 5,000 findings)' : 'No'],
+    [],
+    ['Severity', 'Count'],
+    ['Critical', C.critical], ['High', C.high], ['Medium', C.medium], ['Low', C.low], ['Info', C.info],
+    ['Total', findings.length],
+    [],
+    ['Integration', 'Provider', 'Account', 'Status', 'Last Sync'],
+    ...integrations.map((i) => [i.displayName, providerLabel(i.provider), i.accountId ?? '', i.status, i.lastSyncAt ?? '']),
+  ])
+  ws1['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 24 }, { wch: 14 }, { wch: 28 }]
+  XLSX.utils.book_append_sheet(wb, ws1, 'Summary')
+
+  const ws2 = XLSX.utils.aoa_to_sheet([
+    ['#', 'Title', 'Severity', 'Status', 'Provider', 'Product', 'Finding Type', 'Account/Project', 'Region',
+     'Resource Type', 'Resource ID', 'CVE', 'CVSS', 'Description', 'Recommendation', 'Reference', 'First Seen', 'Last Seen', 'Provider Finding ID'],
+    ...findings.map((f, i) => [
+      i + 1, f.title, f.severity, f.status, providerLabel(f.provider), f.providerProduct ?? '', f.findingType ?? '',
+      f.accountId ?? '', f.region ?? '', f.resourceType ?? '', f.resourceId ?? '', f.cveIds.join(', '),
+      f.cvssScore ?? '', f.description, f.recommendation ?? '', f.remediationUrl ?? f.sourceUrl ?? '',
+      f.firstSeenAt, f.lastSeenAt, f.providerFindingId,
+    ]),
+  ])
+  XLSX.utils.book_append_sheet(wb, ws2, 'Findings')
+
+  const ws3 = XLSX.utils.aoa_to_sheet([
+    ['Resource', 'Resource ID', 'Type', 'Provider', 'Account/Project', 'Region', 'Open Findings', 'Total Findings', 'Last Seen'],
+    ...assets.map((a) => [a.resourceName ?? '', a.resourceId, a.resourceType, providerLabel(a.provider), a.accountId ?? '',
+      a.region ?? '', a.openFindingCount, a.findingCount, a.lastSeenAt]),
+  ])
+  XLSX.utils.book_append_sheet(wb, ws3, 'Assets')
 
   const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
   return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })

@@ -87,7 +87,8 @@ function RegisterForm({ prefilledEmail, onDone }: { prefilledEmail?: string; onD
     if (pass.length < 6)  { setErr('Password must be at least 6 characters'); return }
     setBusy(true)
     try {
-      await register(name.trim(), email.trim().toLowerCase(), pass)
+      // Invited: account only — joining happens on acceptance, no new organization.
+      await register(name.trim(), email.trim().toLowerCase(), pass, null)
       onDone()
     } catch (ex: any) {
       const code = ex?.code ?? ''

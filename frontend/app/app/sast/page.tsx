@@ -19,6 +19,7 @@ import {
   type FirestoreSastScan,
 } from '@/lib/firestore-sast-scans'
 import { uploadSastZip, uploadSastDirectory } from '@/lib/api-sast'
+import { OrgScanUsageInline } from '@/components/app/org-scan-usage'
 import {
   getOAuthUrl,
   getOAuthStatus,
@@ -90,11 +91,12 @@ function StatusBadge({ status }: { status: string }) {
 
 type ScanMethod = 'zip' | 'directory' | 'github' | 'gitlab'
 
-const METHODS: { id: ScanMethod; label: string; desc: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'zip',       label: 'Upload ZIP',           desc: 'Upload a zipped project archive', icon: Upload    },
-  { id: 'directory', label: 'Upload Source Folder', desc: 'Upload a local source directory', icon: FolderOpen },
-  { id: 'github',    label: 'GitHub Repository',    desc: 'Scan from a GitHub repo',         icon: Github    },
-  { id: 'gitlab',    label: 'GitLab Repository',    desc: 'Scan from a GitLab repo',         icon: Gitlab    },
+// ZIP and Source-Folder upload are intentionally not offered in the UI (the
+// backend upload endpoints remain for programmatic use). GitLab is disabled
+// pending OAuth support.
+const METHODS: { id: ScanMethod; label: string; desc: string; icon: React.ComponentType<{ className?: string }>; disabled?: boolean; badge?: string }[] = [
+  { id: 'github', label: 'GitHub Repository', desc: 'Scan from a GitHub repo', icon: Github },
+  { id: 'gitlab', label: 'GitLab Repository', desc: 'GitLab OAuth support is on the way', icon: Gitlab, disabled: true, badge: 'Coming Soon' },
 ]
 
 function NewScanModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -102,7 +104,7 @@ function NewScanModal({ open, onClose }: { open: boolean; onClose: () => void })
   const router   = useRouter()
 
   // ── Base state ──────────────────────────────────────────────────────
-  const [method, setMethod]           = useState<ScanMethod>('zip')
+  const [method, setMethod]           = useState<ScanMethod>('github')
   const [projectName, setProjectName] = useState('')
   const [uploading, setUploading]     = useState(false)
   const zipRef = useRef<HTMLInputElement>(null)
@@ -110,6 +112,7 @@ function NewScanModal({ open, onClose }: { open: boolean; onClose: () => void })
 
   // ── OAuth state ─────────────────────────────────────────────────────
   const [oauthStatus, setOauthStatus]         = useState<OAuthStatus | null>(null)
+  const [oauthError, setOauthError]           = useState<string | null>(null)
   const [oauthLoading, setOauthLoading]       = useState(false)
   const [repos, setRepos]                     = useState<Repo[]>([])
   const [repoSearch, setRepoSearch]           = useState('')
@@ -129,6 +132,7 @@ function NewScanModal({ open, onClose }: { open: boolean; onClose: () => void })
     if (!user) return
     setOauthLoading(true)
     setOauthStatus(null)
+    setOauthError(null)
     setRepos([])
     setSelectedRepo(null)
     setBranches([])
@@ -137,6 +141,13 @@ function NewScanModal({ open, onClose }: { open: boolean; onClose: () => void })
       const st = await getOAuthStatus(p, user.uid)
       setOauthStatus(st)
       if (st.connected) loadRepos(p, '')
+    } catch {
+      // Network-level failure (backend down, or unreachable from this origin).
+      // Surface it as a UI state — an unhandled rejection here takes down the
+      // whole SAST page with a runtime overlay.
+      setOauthError(
+        `Could not reach the Vectra backend to check your ${p === 'github' ? 'GitHub' : 'GitLab'} connection.`,
+      )
     } finally {
       setOauthLoading(false)
     }
@@ -222,6 +233,8 @@ function NewScanModal({ open, onClose }: { open: boolean; onClose: () => void })
           window.removeEventListener('message', onMessage)
         }
       }, 500)
+    }).catch(() => {
+      toast.error('Could not reach the Vectra backend')
     })
   }
 
@@ -236,10 +249,11 @@ function NewScanModal({ open, onClose }: { open: boolean; onClose: () => void })
 
   // ── Reset / close ───────────────────────────────────────────────────
   function resetModal() {
-    setMethod('zip')
+    setMethod('github')
     setProjectName('')
     setUploading(false)
     setOauthStatus(null)
+    setOauthError(null)
     setRepos([])
     setSelectedRepo(null)
     setBranches([])
@@ -348,19 +362,29 @@ function NewScanModal({ open, onClose }: { open: boolean; onClose: () => void })
                 return (
                   <button
                     key={m.id}
+                    disabled={m.disabled}
+                    aria-disabled={m.disabled}
                     onClick={() => {
+                      if (m.disabled) return
                       setMethod(m.id)
                       setSelectedRepo(null)
                       setBranches([])
                     }}
                     className={`relative text-left p-3 rounded-xl border transition-all ${
-                      sel
-                        ? 'border-violet-500/50 bg-violet-500/10'
-                        : 'border-foreground/12 hover:border-foreground/25 hover:bg-foreground/5'
+                      m.disabled
+                        ? 'border-foreground/10 opacity-50 cursor-not-allowed'
+                        : sel
+                          ? 'border-violet-500/50 bg-violet-500/10'
+                          : 'border-foreground/12 hover:border-foreground/25 hover:bg-foreground/5'
                     }`}
                   >
-                    <Icon className={`w-4 h-4 mb-1.5 ${sel ? 'text-violet-400' : 'text-muted-foreground'}`} />
-                    <p className={`text-xs font-medium ${sel ? 'text-violet-400' : 'text-foreground'}`}>{m.label}</p>
+                    {m.badge && (
+                      <span className="absolute top-2 right-2 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-foreground/10 text-muted-foreground">
+                        {m.badge}
+                      </span>
+                    )}
+                    <Icon className={`w-4 h-4 mb-1.5 ${sel && !m.disabled ? 'text-violet-400' : 'text-muted-foreground'}`} />
+                    <p className={`text-xs font-medium ${sel && !m.disabled ? 'text-violet-400' : 'text-foreground'}`}>{m.label}</p>
                     <p className="text-[10px] text-muted-foreground mt-0.5">{m.desc}</p>
                   </button>
                 )
@@ -377,6 +401,30 @@ function NewScanModal({ open, onClose }: { open: boolean; onClose: () => void })
                 <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span className="text-sm">Checking {providerLabel} connection…</span>
+                </div>
+              )}
+
+              {/* Backend unreachable */}
+              {!oauthLoading && oauthError && (
+                <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                    <p className="text-sm font-medium text-red-400">Backend Unreachable</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{oauthError}</p>
+                  <p className="text-[11px] text-muted-foreground/60">
+                    Confirm the API is running and that{' '}
+                    <code className="text-[11px] bg-foreground/8 px-1 rounded">NEXT_PUBLIC_API_URL</code>{' '}
+                    points to a URL reachable from this browser.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs border-foreground/20"
+                    onClick={() => checkStatus(provider)}
+                  >
+                    Retry
+                  </Button>
                 </div>
               )}
 
@@ -611,6 +659,7 @@ function NewScanModal({ open, onClose }: { open: boolean; onClose: () => void })
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 pb-5 shrink-0 border-t border-foreground/8 pt-4">
+          <div className="mr-auto"><OrgScanUsageInline /></div>
           <Button variant="ghost" size="sm" onClick={handleClose} disabled={uploading}>
             Cancel
           </Button>

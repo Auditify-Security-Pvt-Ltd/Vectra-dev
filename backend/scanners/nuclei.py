@@ -3,11 +3,14 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+from pathlib import Path
 from typing import AsyncGenerator, Optional
 
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "Private-Nuclei-Templates"
 
 
 def is_nuclei_available() -> bool:
@@ -49,7 +52,7 @@ async def stream_nuclei_scan(
         logger.warning("Nuclei binary not found in PATH")
         return
 
-    cmd = ["nuclei", "-u", target, "-jsonl", "-silent", "-no-color", "-t" ,"/home/kali/Desktop/vectra/backend/Private-Nuclei-Templates" ]
+    cmd = ["nuclei", "-u", target, "-jsonl", "-silent", "-no-color", "-t", str(_TEMPLATES_DIR)]
     if profile == "QUICK_SCAN":
         cmd.extend([])
     elif profile == "WEB_SCAN":

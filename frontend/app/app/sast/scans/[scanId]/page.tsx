@@ -354,7 +354,15 @@ export default function SastScanDetailPage() {
               </span>
             </div>
             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-              <span>{scan.uploadMethod === 'zip' ? 'ZIP upload' : 'Directory upload'}</span>
+              <span>{
+                scan.repoProvider && scan.repoOwner && scan.repoName
+                  ? `${scan.repoProvider === 'github' ? 'GitHub' : 'GitLab'}: ${scan.repoOwner}/${scan.repoName}`
+                  : scan.uploadMethod === 'github'    ? 'GitHub repository'
+                  : scan.uploadMethod === 'gitlab'    ? 'GitLab repository'
+                  : scan.uploadMethod === 'zip'       ? 'ZIP upload'
+                  : scan.uploadMethod === 'directory' ? 'Directory upload'
+                  : '—'
+              }</span>
               {scan.duration && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{scan.duration}</span>}
               {scan.totalFiles > 0 && <span>{scan.totalFiles} files</span>}
             </div>

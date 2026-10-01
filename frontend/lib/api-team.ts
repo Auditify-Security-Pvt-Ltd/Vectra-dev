@@ -6,7 +6,9 @@
 
 import type { OrgRole } from './rbac'
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+// Same-origin proxy path by default (rewritten to the backend by next.config.mjs);
+// set NEXT_PUBLIC_API_URL to an absolute URL to bypass the proxy.
+const BASE = process.env.NEXT_PUBLIC_API_URL || '/api/backend'
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

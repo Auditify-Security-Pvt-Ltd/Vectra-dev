@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -23,6 +23,9 @@ from scanners.sast_scanner import (
     detect_language,
     scan_secrets,
 )
+from services.auth import Identity, require_user
+from services import firebase, quota
+from services.scan_guard import effective_uid, enforce_scan_quota, request_id_from
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -246,17 +249,25 @@ async def _run_sast(scan_id: str, project_root: Path, temp_dir: str) -> None:
 
 @router.post("/upload")
 async def upload_sast_scan(
+    http_request: Request,
     projectName:  str           = Form(...),
     userId:       str           = Form(...),
     uploadMethod: str           = Form(...),   # 'zip' | 'directory'
     file:         Optional[UploadFile] = File(None),
     files:        List[UploadFile]     = File(default=[]),
+    identity:     Identity      = Depends(require_user),
 ) -> dict:
     """
     Accept a ZIP archive or a list of source files (directory upload).
     Returns {scanId, status} immediately; use /sast/scan/{scanId}/stream for progress.
     """
-    scan_id  = str(uuid.uuid4())
+    claim    = enforce_scan_quota(identity, userId, "sast", str(uuid.uuid4()),
+                                  request_id_from(http_request))
+    userId   = claim.uid
+    scan_id  = claim.scanId
+    if claim.duplicate:
+        return {"scanId": scan_id, "status": _SAST_SCANS.get(scan_id, {}).get("status", "queued"),
+                "duplicate": True}
     temp_dir = tempfile.mkdtemp(prefix=f"sast_{scan_id}_")
 
     try:
@@ -310,12 +321,15 @@ async def upload_sast_scan(
 
     except HTTPException:
         shutil.rmtree(temp_dir, ignore_errors=True)
+        quota.release_claim(claim)  # no scan was created
         raise
     except zipfile.BadZipFile:
         shutil.rmtree(temp_dir, ignore_errors=True)
+        quota.release_claim(claim)  # no scan was created
         raise HTTPException(status_code=400, detail="Uploaded file is not a valid ZIP archive")
     except Exception as exc:
         shutil.rmtree(temp_dir, ignore_errors=True)
+        quota.release_claim(claim)  # no scan was created
         logger.error(f"[SAST] Upload failed: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to process uploaded files")
 
@@ -373,7 +387,7 @@ async def stream_sast_scan(scan_id: str) -> StreamingResponse:
         event_generator(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
         },
@@ -446,7 +460,11 @@ class RepoScanRequest(BaseModel):
 
 
 @router.post("/scan/repo")
-async def start_repo_scan(body: RepoScanRequest) -> dict:
+async def start_repo_scan(
+    body: RepoScanRequest,
+    http_request: Request,
+    identity: Identity = Depends(require_user),
+) -> dict:
     """
     Download a GitHub/GitLab repository (using stored OAuth token) and run
     the SAST pipeline on it.  The cloned files are deleted after the scan.
@@ -457,11 +475,22 @@ async def start_repo_scan(body: RepoScanRequest) -> dict:
     if body.provider not in ("github", "gitlab"):
         raise HTTPException(400, f"Unknown provider: {body.provider}")
 
-    token = get_oauth_token(body.provider, body.userId)
+    # The OAuth token must belong to the verified caller, never to a userId from
+    # the request body — otherwise one user could scan another's private repos.
+    if firebase.is_configured():
+        identity.require_verified()
+    token = get_oauth_token(body.provider, effective_uid(identity, body.userId))
     if not token:
         raise HTTPException(401, f"Not connected to {body.provider}. Please reconnect your account.")
 
-    scan_id  = str(uuid.uuid4())
+    # Quota is claimed only after provider/token validation, so a failed
+    # submission never costs the user a scan.
+    claim    = enforce_scan_quota(identity, body.userId, "sast", str(uuid.uuid4()),
+                                  request_id_from(http_request))
+    scan_id  = claim.scanId
+    if claim.duplicate:
+        return {"scanId": scan_id, "status": _SAST_SCANS.get(scan_id, {}).get("status", "queued"),
+                "duplicate": True}
     temp_dir = tempfile.mkdtemp(prefix=f"sast_{scan_id}_")
 
     try:
@@ -489,17 +518,20 @@ async def start_repo_scan(body: RepoScanRequest) -> dict:
 
     except HTTPException:
         shutil.rmtree(temp_dir, ignore_errors=True)
+        quota.release_claim(claim)  # no scan was created
         raise
     except RuntimeError as exc:
         shutil.rmtree(temp_dir, ignore_errors=True)
+        quota.release_claim(claim)  # no scan was created
         raise HTTPException(400, str(exc))
     except Exception as exc:
         shutil.rmtree(temp_dir, ignore_errors=True)
+        quota.release_claim(claim)  # no scan was created
         logger.error(f"[SAST:{scan_id}] Repo download failed: {exc}", exc_info=True)
         raise HTTPException(500, "Failed to download repository")
 
     # Build scan record with repo metadata
-    scan_record = _blank(scan_id, body.projectName, body.provider, body.userId)
+    scan_record = _blank(scan_id, body.projectName, body.provider, claim.uid)
     scan_record.update({
         "repoProvider":    body.provider,
         "repoOwner":       body.owner,

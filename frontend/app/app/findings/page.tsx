@@ -7,7 +7,7 @@ import {
   ChevronDown, ChevronRight, Globe, X, ExternalLink, Server,
   MessageSquare, Check, Download, Clock, RotateCcw, CheckCheck,
   Filter, SlidersHorizontal, FileText, User, UserCheck, UserMinus,
-  Copy, Link2, CheckCircle2, XCircle, CalendarClock, Code2,
+  Copy, Link2, CheckCircle2, XCircle, CalendarClock, Code2, Cloud,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,6 +17,9 @@ import { listenToNetworkFindings, type FirestoreNetworkFinding } from '@/lib/fir
 import { listenToNetworkCves, type FirestoreNetworkCve } from '@/lib/firestore-network-cves'
 import { listenToSastFindings, type FirestoreSastFinding } from '@/lib/firestore-sast-findings'
 import { useAuth } from '@/context/auth-context'
+import { listAllCloudFindings, providerLabel, type CloudFindingListItem } from '@/lib/api-cloud'
+import { PageSkeleton } from '@/components/app/loading-states'
+import { useDelayedLoading } from '@/hooks/use-loading'
 import { useTeam } from '@/context/team-context'
 import type { OrgMember } from '@/lib/firestore-team'
 import {
@@ -34,9 +37,9 @@ import {
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-type ModuleFilter = 'all' | 'web' | 'network' | 'sast'
+type ModuleFilter = 'all' | 'web' | 'network' | 'sast' | 'cloud'
 type TypeFilter   = 'findings' | 'cves'
-type Module       = 'web' | 'network' | 'sast'
+type Module       = 'web' | 'network' | 'sast' | 'cloud'
 
 interface NormalizedFinding {
   id:          string
@@ -108,12 +111,14 @@ const MODULE_BADGE: Record<Module, { label: string; cls: string }> = {
   web:     { label: 'WEB',     cls: 'bg-blue-500/15 text-blue-400 border-blue-500/25'       },
   network: { label: 'NETWORK', cls: 'bg-green-500/15 text-green-400 border-green-500/25'    },
   sast:    { label: 'SAST',    cls: 'bg-violet-500/15 text-violet-400 border-violet-500/25' },
+  cloud:   { label: 'CLOUD',   cls: 'bg-sky-500/15 text-sky-400 border-sky-500/25'          },
 }
 
 const MODULE_ICON: Record<Module, React.ComponentType<{ className?: string }>> = {
   web:     Globe,
   network: Server,
   sast:    Code2,
+  cloud:   Cloud,
 }
 
 const SEV_BADGE: Record<string, string> = {
@@ -145,6 +150,7 @@ const MODULE_FILTERS: { value: ModuleFilter; label: string }[] = [
   { value: 'web',     label: 'Web Security'     },
   { value: 'network', label: 'Network Security' },
   { value: 'sast',    label: 'SAST'             },
+  { value: 'cloud',   label: 'Cloud Security'   },
 ]
 
 const FINDING_SEV_KEYS = ['critical', 'high', 'medium', 'low', 'info'] as const
@@ -214,6 +220,29 @@ function normalizeSastFinding(f: FirestoreSastFinding): NormalizedFinding {
     scanId: f.scanId,
     host: f.file ?? null,
     matchedAt: f.line > 0 ? `line ${f.line}` : null,
+    port: null,
+  }
+}
+
+/**
+ * Cloud findings come from the Cloud Security backend (not a client listener).
+ * They are grouped by cloud account/project, so an AWS account or GCP project
+ * plays the role a host or project plays for the other modules. Team workflow
+ * (status, assignee, comments, SLA) reuses finding_tracking keyed by fingerprint.
+ */
+function normalizeCloudFinding(f: CloudFindingListItem): NormalizedFinding {
+  return {
+    id: f.fingerprint, module: 'cloud',
+    severity: f.severity,
+    title: f.title,
+    target: `${providerLabel(f.provider)} ${f.accountId ?? ''}`.trim(),
+    scanner: f.providerProduct ?? providerLabel(f.provider),
+    template: f.findingType ?? '',
+    description: f.cveId ? `${f.cveId}${f.cvssScore != null ? ` (CVSS ${f.cvssScore.toFixed(1)})` : ''}` : '',
+    createdAt: f.firstSeenAt,
+    scanId: f.integrationId,
+    host: f.resourceName ?? f.resourceId ?? null,
+    matchedAt: f.region ?? null,
     port: null,
   }
 }
@@ -1018,7 +1047,7 @@ function FindingDrawer({
               onClick={() => setScanExpanded(p => !p)}
               className="w-full flex items-center justify-between px-6 py-4 hover:bg-foreground/[0.02] transition-colors"
             >
-              <p className="text-[10px] font-semibold text-muted-foreground/55 uppercase tracking-wider">Related Scan</p>
+              <p className="text-[10px] font-semibold text-muted-foreground/55 uppercase tracking-wider">{finding.module === 'cloud' ? 'Cloud Source' : 'Related Scan'}</p>
               {scanExpanded
                 ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/40" />
                 : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/40" />}
@@ -1026,17 +1055,28 @@ function FindingDrawer({
             {scanExpanded && (
               <div className="px-6 pb-5 space-y-2 text-sm">
                 <div className="bg-foreground/[0.03] border border-foreground/8 rounded-xl p-4 space-y-2.5">
-                  {[
+                  {(finding.module === 'cloud' ? [
+                    ['Source',    'Cloud Security'],
+                    ['Product',   finding.scanner],
+                    ['Account',   finding.target],
+                    ['Resource',  finding.host ?? '—'],
+                    ['Region',    finding.matchedAt ?? '—'],
+                  ] : [
                     ['Scan ID',   finding.scanId],
                     ['Scanner',   finding.scanner],
                     ['Target',    finding.target],
                     ['Module',    finding.module.toUpperCase()],
-                  ].map(([k, v]) => (
+                  ]).map(([k, v]) => (
                     <div key={k} className="flex gap-3">
                       <span className="text-muted-foreground w-16 shrink-0">{k}</span>
                       <span className="text-foreground/80 font-mono text-xs break-all">{v}</span>
                     </div>
                   ))}
+                  {finding.module === 'cloud' && (
+                    <a href={`/app/cloud-security/findings/${finding.id}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                      Open cloud finding details <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
                 </div>
               </div>
             )}
@@ -3336,14 +3376,17 @@ function VulnMgmtContent() {
 
   const rawModule = searchParams.get('module') ?? 'all'
   const rawType   = searchParams.get('type')   ?? 'findings'
-  const moduleFilter: ModuleFilter = (['all', 'web', 'network', 'sast'] as const).includes(rawModule as ModuleFilter)
+  const moduleFilter: ModuleFilter = (['all', 'web', 'network', 'sast', 'cloud'] as const).includes(rawModule as ModuleFilter)
     ? rawModule as ModuleFilter : 'all'
   const typeFilter: TypeFilter = rawType === 'cves' ? 'cves' : 'findings'
 
   // Raw Firestore state
+  const [findingsReady, setFindingsReady] = useState(false)
   const [webFindings,  setWebFindings]  = useState<FirestoreFinding[]>([])
   const [netFindings,  setNetFindings]  = useState<FirestoreNetworkFinding[]>([])
   const [sastFindings, setSastFindings] = useState<FirestoreSastFinding[]>([])
+  const [cloudFindings, setCloudFindings] = useState<CloudFindingListItem[]>([])
+  const [cloudError,    setCloudError]    = useState<string | null>(null)
   const [webCves,      setWebCves]      = useState<FirestoreCve[]>([])
   const [netCves,      setNetCves]      = useState<FirestoreNetworkCve[]>([])
 
@@ -3377,7 +3420,7 @@ function VulnMgmtContent() {
 
   useEffect(() => {
     if (!user) return
-    const u1 = listenToFindings(user.organizationId, setWebFindings)
+    const u1 = listenToFindings(user.organizationId, (v) => { setWebFindings(v); setFindingsReady(true) })
     const u2 = listenToNetworkFindings(user.organizationId, setNetFindings)
     const u3 = listenToSastFindings(user.organizationId, setSastFindings)
     const u4 = listenToCves(user.organizationId, setWebCves)
@@ -3387,12 +3430,23 @@ function VulnMgmtContent() {
     return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7() }
   }, [user])
 
+  // Open cloud findings from the Cloud Security API (server-paged, capped).
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    listAllCloudFindings({ status: 'open', sort: 'severity' })
+      .then((rows) => { if (!cancelled) { setCloudFindings(rows); setCloudError(null) } })
+      .catch((err) => { if (!cancelled) setCloudError(err instanceof Error ? err.message : 'Cloud findings unavailable') })
+    return () => { cancelled = true }
+  }, [user])
+
   // Normalize
   const allFindings = useMemo<NormalizedFinding[]>(() => [
     ...webFindings.map(normalizeFinding),
     ...netFindings.map(normalizeNetworkFinding),
     ...sastFindings.map(normalizeSastFinding),
-  ], [webFindings, netFindings, sastFindings])
+    ...cloudFindings.map(normalizeCloudFinding),
+  ], [webFindings, netFindings, sastFindings, cloudFindings])
 
   const allCves = useMemo<NormalizedCve[]>(() => [
     ...webCves.map(normalizeCve),
@@ -3552,6 +3606,18 @@ function VulnMgmtContent() {
   const cardCount = typeFilter === 'findings' ? visibleFindingSummaries.length : visibleCveSummaries.length
   const totalTargets = typeFilter === 'findings' ? allFindingSummaries.length : allCveSummaries.length
 
+  const showFindingsSkeleton = useDelayedLoading(!findingsReady)
+
+  // Keep the page shape until findings arrive, rather than briefly claiming
+  // there are none.
+  if (showFindingsSkeleton) {
+    return (
+      <div className="p-6">
+        <PageSkeleton stats={4} rows={6} cols={5} />
+      </div>
+    )
+  }
+
   return (
     <div className="p-6 space-y-4">
 
@@ -3563,9 +3629,12 @@ function VulnMgmtContent() {
             {cardCount === totalTargets
               ? `${totalTargets} target${totalTargets !== 1 ? 's' : ''}`
               : `${cardCount} of ${totalTargets} targets`}
+            {cloudError && (moduleFilter === 'all' || moduleFilter === 'cloud') && (
+              <span className="ml-1.5 text-orange-400/80">· Cloud findings unavailable: {cloudError}</span>
+            )}
             {moduleFilter !== 'all' && (
               <span className="ml-1.5 text-muted-foreground/40">
-                · {moduleFilter === 'web' ? 'Web' : moduleFilter === 'network' ? 'Network' : 'SAST'}
+                · {moduleFilter === 'web' ? 'Web' : moduleFilter === 'network' ? 'Network' : moduleFilter === 'cloud' ? 'Cloud' : 'SAST'}
               </span>
             )}
           </p>
@@ -3635,13 +3704,6 @@ function VulnMgmtContent() {
               {label}
             </button>
           ))}
-          <button
-            disabled
-            title="Cloud — coming soon"
-            className="px-2.5 py-1 rounded-md text-xs font-medium text-muted-foreground/25 cursor-not-allowed"
-          >
-            Cloud
-          </button>
         </div>
 
 
@@ -3733,15 +3795,21 @@ function VulnMgmtContent() {
           <div className="flex flex-col items-center gap-4 py-24 text-muted-foreground">
             <ShieldAlert className="w-14 h-14 opacity-15" />
             <div className="text-center space-y-1.5">
-              <p className="text-base font-semibold text-foreground/70">No scanned targets yet</p>
-              <p className="text-sm opacity-60">Run your first scan to begin monitoring vulnerabilities.</p>
+              <p className="text-base font-semibold text-foreground/70">
+                {moduleFilter === 'cloud' ? 'No open cloud findings' : 'No scanned targets yet'}
+              </p>
+              <p className="text-sm opacity-60">
+                {moduleFilter === 'cloud'
+                  ? 'Connect a cloud provider and sync to import findings.'
+                  : 'Run your first scan to begin monitoring vulnerabilities.'}
+              </p>
             </div>
             <Button
               variant="outline" size="sm"
               className="mt-1 border-foreground/20 rounded-lg px-5"
-              onClick={() => router.push('/app/scans')}
+              onClick={() => router.push(moduleFilter === 'cloud' ? '/app/cloud-security/integrations' : '/app/scans')}
             >
-              Start a Scan
+              {moduleFilter === 'cloud' ? 'Cloud Integrations' : 'Start a Scan'}
             </Button>
           </div>
         ) : visibleFindingSummaries.length === 0 ? (

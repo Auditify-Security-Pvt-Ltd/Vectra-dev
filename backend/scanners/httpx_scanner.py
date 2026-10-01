@@ -5,9 +5,15 @@ import json
 import shutil
 from typing import Optional
 
+# On Kali (and other distros shipping python3-httpx), "httpx" on PATH resolves
+# to the unrelated Python HTTP client, not ProjectDiscovery's recon tool.
+# Kali packages the latter as "httpx-toolkit" to avoid the name collision.
+def _httpx_bin() -> Optional[str]:
+    return shutil.which("httpx-toolkit") or shutil.which("httpx")
+
 
 async def is_httpx_available() -> bool:
-    return shutil.which("httpx") is not None
+    return _httpx_bin() is not None
 
 
 async def probe_host(subdomain: str, timeout: int = 15) -> Optional[dict]:
@@ -16,7 +22,7 @@ async def probe_host(subdomain: str, timeout: int = 15) -> Optional[dict]:
     Returns None if the host is unreachable or httpx produces no output.
     """
     proc = await asyncio.create_subprocess_exec(
-        "httpx",
+        _httpx_bin(),
         "-u", subdomain,
         "-title",
         "-status-code",

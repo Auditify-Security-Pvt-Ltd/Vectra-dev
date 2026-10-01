@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation'
 import { AdminSidebar } from '@/components/admin/admin-sidebar'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { useAuth } from '@/context/auth-context'
+import { isPlatformAdmin } from '@/lib/rbac'
 
-const ADMIN_ROLES = ['super_admin', 'platform_admin']
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -20,7 +20,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       return
     }
 
-    if (!ADMIN_ROLES.includes(user.role)) {
+    if (!isPlatformAdmin(user.role)) {
       router.push('/app/dashboard')
     }
   }, [user, loading, router])
@@ -36,7 +36,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     )
   }
 
-  if (!user || !ADMIN_ROLES.includes(user.role)) {
+  if (!user || !isPlatformAdmin(user.role)) {
     return null
   }
 

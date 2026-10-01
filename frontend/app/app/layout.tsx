@@ -10,9 +10,8 @@ import { ScanSyncProvider } from '@/context/scan-sync-context'
 import { AssetSyncProvider } from '@/context/asset-sync-context'
 import { CveSyncProvider } from '@/context/cve-sync-context'
 import { TeamProvider } from '@/context/team-context'
-import { hasPermission } from '@/lib/rbac'
+import { hasPermission, isPlatformAdmin } from '@/lib/rbac'
 
-const ADMIN_ROLES = ['super_admin', 'platform_admin']
 
 // Routes that require specific permissions. If not listed, default is: authenticated = allowed.
 const ROUTE_PERMISSIONS: Array<{ prefix: string; perm: keyof ReturnType<typeof hasPermission extends (...args: any) => infer R ? never : any> }> = []
@@ -36,7 +35,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
 
     // Platform admins use a different UI
-    if (ADMIN_ROLES.includes(user.role)) {
+    if (isPlatformAdmin(user.role)) {
       router.push('/admin/dashboard')
       return
     }
@@ -63,7 +62,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     )
   }
 
-  if (!user || ADMIN_ROLES.includes(user.role)) return null
+  if (!user || isPlatformAdmin(user.role)) return null
 
   return (
     <SidebarProvider>

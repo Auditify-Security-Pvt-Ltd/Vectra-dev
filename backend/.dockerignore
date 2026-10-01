@@ -1,0 +1,36 @@
+# Python virtualenv & caches (rebuilt inside the image)
+.venv
+venv
+env
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+*.egg-info
+
+# Secrets & local env — NEVER copy into an image
+.env
+.env.*
+!.env.example
+# Firebase / cloud service-account keys must never enter the image
+*service-account*.json
+*serviceaccount*.json
+*-adminsdk-*.json
+*.pem
+*.key
+
+# Locally-persisted runtime state & logs (belongs in a volume, not the image)
+data/network_schedules.json
+data/scans
+*.log
+firestore-debug.log
+
+# VCS / tooling
+.git
+.gitignore
+tests
+
+# Docker files themselves
+Dockerfile
+.dockerignore

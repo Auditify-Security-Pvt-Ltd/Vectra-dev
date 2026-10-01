@@ -11,6 +11,8 @@ import { NewScanModal } from '@/components/app/new-scan-modal'
 import { listenToScans, updateFirestoreScan, createFirestoreScan, ACTIVE_STATUSES, type FirestoreScan } from '@/lib/firestore-scans'
 import { cancelScan, restartScan } from '@/lib/api'
 import { useAuth } from '@/context/auth-context'
+import { TableSkeleton } from '@/components/app/loading-states'
+import { useDelayedLoading } from '@/hooks/use-loading'
 
 const STATUS_BADGE: Record<string, string> = {
   // terminal
@@ -59,14 +61,20 @@ export default function ScansPage() {
   const router = useRouter()
   const { user } = useAuth()
   const [scans, setScans] = useState<FirestoreScan[]>([])
+  const [scansLoading, setScansLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
+  const showScansSkeleton = useDelayedLoading(scansLoading)
+
   // Firestore realtime listener
   useEffect(() => {
     if (!user) return
-    const unsub = listenToScans(user.organizationId, setScans)
+    const unsub = listenToScans(user.organizationId, (s) => {
+      setScans(s)
+      setScansLoading(false)
+    })
     return unsub
   }, [user])
 
@@ -227,7 +235,9 @@ export default function ScansPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {filtered.length === 0 ? (
+          {showScansSkeleton ? (
+            <TableSkeleton rows={5} cols={7} />
+          ) : scansLoading ? null : filtered.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <p className="text-sm">No scans yet.</p>
               <p className="text-xs mt-1">Click &ldquo;Start New Scan&rdquo; to run your first scan.</p>

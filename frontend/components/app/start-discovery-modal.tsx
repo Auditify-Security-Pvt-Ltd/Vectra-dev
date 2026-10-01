@@ -6,7 +6,7 @@ import { Globe, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { startDiscovery } from '@/lib/api-assets'
 import { createFirestoreDiscovery } from '@/lib/firestore-assets'
 import { useAuth } from '@/context/auth-context'
@@ -75,6 +75,7 @@ export function StartDiscoveryModal({ open, onOpenChange }: Props) {
       <DialogContent className="sm:max-w-md bg-card border-foreground/10">
         <DialogHeader>
           <DialogTitle className="text-xl font-bold">Asset Discovery</DialogTitle>
+          <DialogDescription>Enumerate subdomains of a domain and probe which hosts are live.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 pt-2">

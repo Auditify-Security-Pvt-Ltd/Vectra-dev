@@ -1,4 +1,6 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://antibody-rss-challenging-duke.trycloudflare.com'
+// Same-origin proxy path by default (rewritten to the backend by next.config.mjs);
+// set NEXT_PUBLIC_API_URL to an absolute URL to bypass the proxy.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api/backend'
 
 export interface ApiCorrelationStart {
   correlationId: string

@@ -11,9 +11,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from services import firebase, quota
+from services.auth import Identity, require_user
+from services.scan_guard import claim_for_uid, effective_uid
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -31,7 +34,7 @@ _SCHEDULER_TASK: "asyncio.Task | None" = None
 # ── Pydantic models ───────────────────────────────────────────────────
 
 class ScheduleCreate(BaseModel):
-    userId:   str
+    userId:   str = ""   # legacy; ignored when the caller has a verified token
     target:   str
     profile:  str = "QUICK_SCAN"
     interval: str  # "once" | "daily" | "weekly" | "monthly"
@@ -66,6 +69,58 @@ def _load() -> None:
         logger.info(f"[SCHED] Loaded {len(_SCHEDULES)} schedule(s)")
     except Exception as exc:
         logger.error(f"[SCHED] load error: {exc}")
+
+
+# ── Authorization ─────────────────────────────────────────────────────
+
+def _enforced() -> bool:
+    return firebase.is_configured()
+
+
+def _can_access(identity: Identity, sched: dict) -> bool:
+    """A schedule is visible to members of the organization of its creator."""
+    if not _enforced():
+        return True
+    caller_org = quota.resolve_org_id(identity.uid)
+    return bool(caller_org) and quota.resolve_org_id(sched.get("userId", "")) == caller_org
+
+
+def _get_authorized(sched_id: str, identity: Identity) -> dict:
+    if _enforced():
+        identity.require_verified()
+    sched = _SCHEDULES.get(sched_id)
+    if not sched or not _can_access(identity, sched):
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    return sched
+
+
+def _launch(sched_id: str, sched: dict) -> Optional[str]:
+    """
+    Start one run of a schedule, charged to the creator's organization.
+    Returns the scan id, or None when the organization cannot scan (the reason
+    is stored on the schedule as lastError).
+    """
+    from api.network_scans import _SCANS, _QUEUE, _execute_network_scan, _blank_scan, _build_scan_id
+
+    user_id = sched["userId"]
+    claim, reason = claim_for_uid(user_id, "network", _build_scan_id())
+    now = datetime.now(timezone.utc).isoformat()
+    _SCHEDULES[sched_id]["lastRun"] = now
+
+    if claim is None:
+        _SCHEDULES[sched_id]["lastError"] = reason
+        _save()
+        return None
+
+    scan_id = claim.scanId
+    _SCANS[scan_id] = _blank_scan(scan_id, sched["target"], sched["profile"], user_id)
+    _QUEUE.enqueue(user_id, scan_id, sched["target"], sched["profile"])
+    asyncio.create_task(_QUEUE.try_start_next(user_id, _execute_network_scan))
+
+    _SCHEDULES[sched_id]["lastScanId"] = scan_id
+    _SCHEDULES[sched_id]["lastError"]  = None
+    _save()
+    return scan_id
 
 
 # ── Interval helpers ──────────────────────────────────────────────────
@@ -111,28 +166,12 @@ def _is_due(sched: dict) -> bool:
 # ── Scheduler tick ────────────────────────────────────────────────────
 
 async def _tick() -> None:
-    # Import at call time to avoid circular imports at module load
-    from api.network_scans import _SCANS, _QUEUE, _execute_network_scan, _blank_scan
-
-    now = datetime.now(timezone.utc).isoformat()
     for sched_id, sched in list(_SCHEDULES.items()):
         if not _is_due(sched):
             continue
-
-        scan_id = f"nscan_{uuid.uuid4().hex[:12]}"
-        user_id = sched["userId"]
-        target  = sched["target"]
-        profile = sched["profile"]
-
-        _SCANS[scan_id] = _blank_scan(scan_id, target, profile, user_id)
-        _QUEUE.enqueue(user_id, scan_id, target, profile)
-        asyncio.create_task(_QUEUE.try_start_next(user_id, _execute_network_scan))
-
-        _SCHEDULES[sched_id]["lastRun"]    = now
-        _SCHEDULES[sched_id]["lastScanId"] = scan_id
-        _save()
-
-        logger.info(f"[SCHED] Triggered {scan_id} for {target} (schedule={sched_id})")
+        scan_id = _launch(sched_id, sched)
+        if scan_id:
+            logger.info(f"[SCHED] Triggered {scan_id} for {sched['target']} (schedule={sched_id})")
 
 
 async def _scheduler_loop() -> None:
@@ -156,20 +195,29 @@ def start_scheduler() -> None:
 # ── REST endpoints ────────────────────────────────────────────────────
 
 @router.get("")
-async def list_schedules(userId: Optional[str] = None) -> List[dict]:
+async def list_schedules(
+    userId: Optional[str] = None,
+    identity: Identity = Depends(require_user),
+) -> List[dict]:
     results = list(_SCHEDULES.values())
-    if userId:
+    if _enforced():
+        identity.require_verified()
+        results = [s for s in results if _can_access(identity, s)]
+    elif userId:
         results = [s for s in results if s.get("userId") == userId]
     return [{**s, "nextRun": _next_run_iso(s)} for s in results]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_schedule(body: ScheduleCreate) -> dict:
+async def create_schedule(body: ScheduleCreate, identity: Identity = Depends(require_user)) -> dict:
+    if _enforced():
+        identity.require_verified()
     sched_id = f"sched_{uuid.uuid4().hex[:12]}"
     now      = datetime.now(timezone.utc).isoformat()
     sched: Dict[str, Any] = {
         "scheduleId": sched_id,
-        "userId":     body.userId,
+        # Bound to the verified caller; every run is charged to their organization.
+        "userId":     effective_uid(identity, body.userId),
         "target":     body.target,
         "profile":    body.profile,
         "interval":   body.interval,
@@ -185,9 +233,8 @@ async def create_schedule(body: ScheduleCreate) -> dict:
 
 
 @router.put("/{sched_id}")
-async def update_schedule(sched_id: str, body: ScheduleUpdate) -> dict:
-    if sched_id not in _SCHEDULES:
-        raise HTTPException(status_code=404, detail="Schedule not found")
+async def update_schedule(sched_id: str, body: ScheduleUpdate, identity: Identity = Depends(require_user)) -> dict:
+    _get_authorized(sched_id, identity)
     for field, val in body.model_dump(exclude_none=True).items():
         _SCHEDULES[sched_id][field] = val
     _save()
@@ -196,32 +243,22 @@ async def update_schedule(sched_id: str, body: ScheduleUpdate) -> dict:
 
 
 @router.delete("/{sched_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_schedule(sched_id: str) -> None:
-    if sched_id not in _SCHEDULES:
-        raise HTTPException(status_code=404, detail="Schedule not found")
+async def delete_schedule(sched_id: str, identity: Identity = Depends(require_user)) -> None:
+    _get_authorized(sched_id, identity)
     del _SCHEDULES[sched_id]
     _save()
 
 
 @router.post("/{sched_id}/trigger")
-async def trigger_schedule(sched_id: str) -> dict:
-    """Manually trigger a scheduled scan immediately."""
-    if sched_id not in _SCHEDULES:
-        raise HTTPException(status_code=404, detail="Schedule not found")
-
-    from api.network_scans import _SCANS, _QUEUE, _execute_network_scan, _blank_scan
-
-    sched   = _SCHEDULES[sched_id]
-    scan_id = f"nscan_{uuid.uuid4().hex[:12]}"
-    user_id = sched["userId"]
-
-    _SCANS[scan_id] = _blank_scan(scan_id, sched["target"], sched["profile"], user_id)
-    _QUEUE.enqueue(user_id, scan_id, sched["target"], sched["profile"])
-    asyncio.create_task(_QUEUE.try_start_next(user_id, _execute_network_scan))
-
-    now = datetime.now(timezone.utc).isoformat()
-    _SCHEDULES[sched_id]["lastRun"]    = now
-    _SCHEDULES[sched_id]["lastScanId"] = scan_id
-    _save()
-
+async def trigger_schedule(sched_id: str, identity: Identity = Depends(require_user)) -> dict:
+    """Manually trigger a scheduled scan immediately. Consumes organization quota."""
+    sched   = _get_authorized(sched_id, identity)
+    scan_id = _launch(sched_id, sched)
+    if scan_id is None:
+        reason = sched.get("lastError") or "Scan not allowed"
+        limit  = "scan limit" in reason
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED if limit else status.HTTP_403_FORBIDDEN,
+            detail={"code": "SCAN_LIMIT_REACHED" if limit else "SCAN_NOT_ALLOWED", "message": reason},
+        )
     return {"success": True, "scanId": scan_id, "scheduleId": sched_id}

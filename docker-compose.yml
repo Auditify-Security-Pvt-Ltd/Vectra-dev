@@ -1,0 +1,99 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Vectra — local (production-like) Docker Compose.
+#
+#   frontend (Next.js)  →  backend (FastAPI + embedded scan worker + scanners)
+#                          Firebase Auth + Firestore stay EXTERNAL (managed).
+#
+# The browser only ever talks to the frontend; frontend proxies /api/backend/*
+# to the backend over the private Docker network (see frontend/next.config.mjs).
+#
+# Configure by copying .env.example -> .env and filling it in.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: vectra-backend:local
+    restart: unless-stopped
+    # nmap needs raw sockets for host discovery (-sn) and OS detection (-O).
+    # NET_RAW is a Docker default; NET_ADMIN is not — both are added explicitly.
+    # The nmap binary carries the file capabilities so the process stays non-root.
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    environment:
+      # ── Firebase Admin (token verification + Firestore) ──
+      # Inline service-account JSON (raw or base64). Keep the real value in .env.
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
+      FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
+      # ── Cloud Security (required) ──
+      VECTRA_SECRETS_KEY: ${VECTRA_SECRETS_KEY:-}
+      VECTRA_AWS_PRINCIPAL_ARN: ${VECTRA_AWS_PRINCIPAL_ARN:-}
+      CLOUD_SYNC_MAX_FINDINGS: ${CLOUD_SYNC_MAX_FINDINGS:-25000}
+      # ── CVE intelligence ──
+      NVD_API_KEY: ${NVD_API_KEY:-}
+      CVE_MODE: ${CVE_MODE:-}
+      # ── SAST repository OAuth ──
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITLAB_CLIENT_ID: ${GITLAB_CLIENT_ID:-}
+      GITLAB_CLIENT_SECRET: ${GITLAB_CLIENT_SECRET:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:8000}
+      # ── Email (team invitations) ──
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      # ── Scan execution tuning ──
+      MAX_CONCURRENT_SCANS_PER_USER: ${MAX_CONCURRENT_SCANS_PER_USER:-1}
+      MAX_NETWORK_WORKERS: ${MAX_NETWORK_WORKERS:-5}
+      QUICK_SCAN_TIMEOUT_SECS: ${QUICK_SCAN_TIMEOUT_SECS:-900}
+      FULL_SCAN_TIMEOUT_SECS: ${FULL_SCAN_TIMEOUT_SECS:-1800}
+      STALE_SCAN_SECS: ${STALE_SCAN_SECS:-120}
+    volumes:
+      # Persist locally-stored scheduler state across container recreation.
+      - backend-data:/app/data
+      # Optional: mount a service-account file instead of inline JSON. Then set
+      # FIREBASE_CREDENTIALS=/run/secrets/firebase-sa.json in .env and leave
+      # FIREBASE_SERVICE_ACCOUNT_JSON empty.
+      # - ./secrets/firebase-service-account.json:/run/secrets/firebase-sa.json:ro
+    ports:
+      # Published so SAST OAuth callbacks (BACKEND_URL) and direct /health checks
+      # work locally. In production the backend can stay private (proxy-only).
+      - "8000:8000"
+    networks:
+      - vectra
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # NEXT_PUBLIC_* are baked into the client bundle at build time.
+        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
+        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:-}
+        NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-}
+        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-}
+        # Leave empty to use the same-origin /api/backend proxy (recommended).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+        # Baked into the rewrite at build time (Next evaluates rewrites() at build).
+        BACKEND_ORIGIN: http://backend:8000
+    image: vectra-frontend:local
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - vectra
+
+networks:
+  vectra:
+    driver: bridge
+
+volumes:
+  backend-data:

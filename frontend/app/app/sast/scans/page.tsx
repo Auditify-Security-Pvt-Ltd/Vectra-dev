@@ -9,6 +9,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { useAuth } from '@/context/auth-context'
+import { TableSkeleton } from '@/components/app/loading-states'
+import { useDelayedLoading } from '@/hooks/use-loading'
 import { listenToSastScans, deleteSastScan, type FirestoreSastScan, SAST_ACTIVE_STATUSES } from '@/lib/firestore-sast-scans'
 import { deleteSastFindingsByScan } from '@/lib/firestore-sast-findings'
 import { deleteSastScanApi } from '@/lib/api-sast'
@@ -128,6 +130,7 @@ export default function SastScansPage() {
   const router    = useRouter()
   const [scans, setScans]     = useState<FirestoreSastScan[]>([])
   const [loading, setLoading] = useState(true)
+  const showSkeleton = useDelayedLoading(loading)
 
   useEffect(() => {
     if (!user) return
@@ -172,11 +175,11 @@ export default function SastScansPage() {
       </div>
 
       <div className="bg-card border border-foreground/10 rounded-xl overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+        {showSkeleton ? (
+          <div className="p-4">
+            <TableSkeleton rows={5} cols={6} />
           </div>
-        ) : scans.length === 0 ? (
+        ) : loading ? null : scans.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <FileCode2 className="w-10 h-10 text-muted-foreground/30 mb-3" />
             <p className="text-sm font-medium text-muted-foreground">No scans yet</p>

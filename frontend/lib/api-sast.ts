@@ -1,3 +1,4 @@
+import { authedFetch, idempotencyHeaders } from './api-auth'
 import { API_BASE } from './api'
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -49,7 +50,7 @@ export async function uploadSastZip(
   form.append('uploadMethod', 'zip')
   form.append('file', file, file.name)
 
-  const res = await fetch(`${API_BASE}/sast/upload`, { method: 'POST', body: form })
+  const res = await authedFetch(`${API_BASE}/sast/upload`, { method: 'POST', body: form, headers: idempotencyHeaders() })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error((err as any).detail || `Upload failed: ${res.status}`)
@@ -72,7 +73,7 @@ export async function uploadSastDirectory(
     form.append('files', f, path)
   }
 
-  const res = await fetch(`${API_BASE}/sast/upload`, { method: 'POST', body: form })
+  const res = await authedFetch(`${API_BASE}/sast/upload`, { method: 'POST', body: form, headers: idempotencyHeaders() })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error((err as any).detail || `Upload failed: ${res.status}`)

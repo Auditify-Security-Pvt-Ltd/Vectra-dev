@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Slot } from '@radix-ui/react-slot'
 import { cva, type VariantProps } from 'class-variance-authority'
+import { Loader2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
@@ -41,19 +42,48 @@ function Button({
   variant,
   size,
   asChild = false,
+  loading = false,
+  loadingText,
+  children,
+  disabled,
   ...props
 }: React.ComponentProps<'button'> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
+    /** Show a spinner and block further clicks while an action is in flight. */
+    loading?: boolean
+    /** Optional label to swap in while loading, e.g. "Generating…". */
+    loadingText?: React.ReactNode
   }) {
   const Comp = asChild ? Slot : 'button'
+
+  // `asChild` forwards to an arbitrary element that may only accept a single
+  // child, so the spinner is only injected for real buttons.
+  if (asChild) {
+    return (
+      <Comp
+        data-slot="button"
+        className={cn(buttonVariants({ variant, size, className }))}
+        disabled={disabled}
+        {...props}
+      >
+        {children}
+      </Comp>
+    )
+  }
 
   return (
     <Comp
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
+      // Disabling while loading is what prevents duplicate submissions.
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...props}
-    />
+    >
+      {loading && <Loader2 className="animate-spin" aria-hidden="true" />}
+      {loading && loadingText ? loadingText : children}
+    </Comp>
   )
 }
 

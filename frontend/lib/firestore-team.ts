@@ -35,7 +35,15 @@ export interface OrgDoc {
   ownerName:  string
   ownerEmail: string
   name:       string
+  website?:   string
+  phone?:     string
   createdAt:  Timestamp | string
+  // Backend-controlled (read-only to clients, see firestore.rules). The
+  // organization — not the user — owns the plan and the shared scan quota.
+  plan?:       string
+  bonusScans?: number
+  scansUsed?:  number
+  status?:     'active' | 'disabled'
 }
 
 export interface OrgMember {

@@ -20,6 +20,10 @@ import { listenToAssets, type FirestoreAsset } from '@/lib/firestore-assets'
 import { listenToCves, type FirestoreCve } from '@/lib/firestore-cves'
 import { listenToFindingTracking, type FindingTracking } from '@/lib/firestore-finding-tracking'
 import { useAuth } from '@/context/auth-context'
+import { PageSkeleton } from '@/components/app/loading-states'
+import { useDelayedLoading } from '@/hooks/use-loading'
+import { OrgScanUsageCard } from '@/components/app/org-scan-usage'
+import { CloudDashboardCard } from '@/components/cloud/cloud-dashboard-card'
 import { UserCheck } from 'lucide-react'
 
 function buildScanActivity(scans: FirestoreScan[]) {
@@ -60,15 +64,17 @@ export default function DashboardPage() {
   const [cves, setCves]         = useState<FirestoreCve[]>([])
   const [tracking, setTracking] = useState<Record<string, FindingTracking>>({})
   const [modalOpen, setModalOpen] = useState(false)
+  const [scansReady, setScansReady] = useState(false)
+  const [findingsReady, setFindingsReady] = useState(false)
 
   useEffect(() => {
     if (!user) return
-    return listenToScans(user.organizationId, setScans)
+    return listenToScans(user.organizationId, (v) => { setScans(v); setScansReady(true) })
   }, [user])
 
   useEffect(() => {
     if (!user) return
-    return listenToFindings(user.organizationId, setFindings)
+    return listenToFindings(user.organizationId, (v) => { setFindings(v); setFindingsReady(true) })
   }, [user])
 
   useEffect(() => {
@@ -191,6 +197,18 @@ export default function DashboardPage() {
   // Build a lookup of findingId → finding title/severity for display
   const findingMeta = Object.fromEntries(findings.map(f => [f.findingId, f]))
 
+  const showDashboardSkeleton = useDelayedLoading(!scansReady || !findingsReady)
+
+  // Hold the page shape while the primary collections deliver their first
+  // snapshot, instead of flashing an all-zero dashboard.
+  if (showDashboardSkeleton) {
+    return (
+      <div className="p-8">
+        <PageSkeleton stats={4} rows={6} cols={5} />
+      </div>
+    )
+  }
+
   return (
     <div className="p-8 space-y-8">
       {/* Header */}
@@ -207,6 +225,10 @@ export default function DashboardPage() {
           Start New Scan
         </Button>
       </div>
+
+      <OrgScanUsageCard />
+
+      <CloudDashboardCard />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">

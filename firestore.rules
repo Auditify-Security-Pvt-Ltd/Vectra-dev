@@ -1,0 +1,296 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vectra Security Platform — Firestore security rules
+//
+// Deploy:  firebase deploy --only firestore:rules
+// Or:      Firebase Console → Firestore Database → Rules → paste → Publish
+//
+// DATA MODEL
+//   users/{uid}                          account profile, platform role
+//                                        (plan/bonusScans/scansUsed here are
+//                                        LEGACY — quota lives on the org)
+//   users/{orgId}/<scan data>/{doc}      ALL scan data is keyed by ORGANIZATION
+//                                        id, which equals the owner's uid. Org
+//                                        members share this tree.
+//   organizations/{orgId}                org profile + plan and SHARED scan
+//                                        quota (plan, bonusScans, scansUsed)
+//   organizations/{orgId}/scanClaims     per-request quota claims (backend)
+//   organizations/{orgId}/cloud_*        Cloud Security integrations, encrypted
+//                                        credentials, findings, assets, syncs
+//                                        (backend-only; served via /cloud API)
+//   organizations/{orgId}/members/{uid}  membership + orgRole (source of truth)
+//   organizations/{orgId}/invitations    pending invites
+//   organizations/{orgId}/auditLogs      org-level audit trail
+//   invitationTokens/{token}             token → org lookup for invite links
+//   platform_config, platform_audit_logs backend-only (Admin SDK)
+//
+// TWO THINGS THESE RULES DELIBERATELY PREVENT
+//   1. Self-service quota. No client — not even an organization admin — can
+//      write plan / bonusScans / scansUsed / status on an organization (or the
+//      legacy copies on a user document), so scan limits cannot be lifted
+//      from the browser. Only the backend Admin SDK may change them.
+//   2. Privilege escalation. Clients may only ever write the non-platform
+//      roles (customer / analyst / team_admin). 'platform_admin' and
+//      'super_admin' can only be granted server-side —
+//      scripts/grant_platform_admin.py or the Firebase Console.
+//
+// NOTE: the Firebase Admin SDK (the FastAPI backend) bypasses these rules
+// entirely. They constrain browser clients only, which is exactly where
+// untrusted input comes from.
+// ─────────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function memberPath(orgId) {
+      return /databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid);
+    }
+
+    // Membership is the single gate for an organization's whole data tree.
+    // A disabled member keeps their document but loses access.
+    function isOrgMember(orgId) {
+      return isSignedIn()
+        && exists(memberPath(orgId))
+        && get(memberPath(orgId)).data.status == 'active';
+    }
+
+    function isOrgAdmin(orgId) {
+      return isOrgMember(orgId)
+        && get(memberPath(orgId)).data.orgRole == 'admin';
+    }
+
+    // A brand-new user owns the org whose id equals their uid. Needed to
+    // bootstrap signup, where the org and its first member do not exist yet.
+    function isOwnWorkspace(orgId) {
+      return isSelf(orgId);
+    }
+
+    // Quota fields the client may never create or modify. Listing them here is
+    // what makes the scan limit tamper-proof from the browser.
+    function quotaOnlyFields() {
+      return ['plan', 'bonusScans', 'scansUsed'];
+    }
+
+    // Quota plus account status. `status` is separated out because signup
+    // legitimately writes it once, but no client may ever *change* it — that
+    // would let a disabled account re-enable itself.
+    function protectedUserFields() {
+      return ['plan', 'bonusScans', 'scansUsed', 'status'];
+    }
+
+    // Platform roles a client is allowed to assign (invite acceptance writes
+    // one of these). Platform administrator roles are intentionally excluded.
+    function isAssignableRole(role) {
+      return role in ['customer', 'analyst', 'team_admin'];
+    }
+
+    // Organization fields only the backend (platform admin / quota service)
+    // may set. Absent on a new org means: default plan, 0 bonus, 0 used, active.
+    function orgControlledFields() {
+      return ['plan', 'bonusScans', 'scansUsed', 'status', 'quotaMigratedAt'];
+    }
+
+    function validOrgName(v) {
+      return v is string && v.size() >= 2 && v.size() <= 100 && !v.matches('.*[<>].*');
+    }
+
+    function validWebsite(v) {
+      return v is string && v.size() <= 200 && v.matches('^https?://[A-Za-z0-9.-]+(:[0-9]+)?(/[^\\s]*)?$');
+    }
+
+    function validPhone(v) {
+      return v is string && v.matches('^[+]?[0-9][0-9 ()-]{5,18}[0-9]$');
+    }
+
+    // Profile fields are optional (legacy orgs lack website/phone) but must
+    // be valid whenever present.
+    function validOrgProfile(data) {
+      return validOrgName(data.name)
+        && (!('website' in data) || validWebsite(data.website))
+        && (!('phone' in data) || validPhone(data.phone));
+    }
+
+    function touches(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ── users/{uid} — profile, platform role, quota ──────────────────────────
+
+    match /users/{uid} {
+      // Only the account owner reads their own record. Org-mate details are
+      // served from organizations/{orgId}/members instead.
+      allow get: if isSelf(uid);
+      allow list: if false;
+
+      // Signup. The client may not mint a privileged role and may not seed its
+      // own quota — those start server-side at plan defaults. `status` is
+      // allowed here because signup legitimately writes 'active', but it may
+      // only ever be that value, so a disabled account cannot be recreated as
+      // active.
+      allow create: if isSelf(uid)
+        && request.resource.data.uid == uid
+        && isAssignableRole(request.resource.data.role)
+        && !request.resource.data.keys().hasAny(quotaOnlyFields())
+        && (!('status' in request.resource.data) || request.resource.data.status == 'active');
+
+      // Profile updates: lastLogin, organizationId and role (invite accept),
+      // name/email. Quota and status remain untouchable.
+      //
+      // `role` is validated only when it actually changes — otherwise an
+      // existing platform_admin could not update their own lastLogin, since
+      // their current role is deliberately not client-assignable.
+      allow update: if isSelf(uid)
+        && !touches(protectedUserFields())
+        && (!touches(['role']) || isAssignableRole(request.resource.data.role));
+
+      // Accounts are deactivated, never deleted — history stays intact.
+      allow delete: if false;
+
+      // ── Organization-scoped scan data ────────────────────────────────────
+      // {uid} here is the ORGANIZATION id, so every active member of that org
+      // shares this subtree. This single rule covers scans, network_scans,
+      // sast_scans, findings, network_findings, sast_findings, cves,
+      // network_cves, assets, network_assets, network_timeline, discoveries,
+      // reports, targets, cve_tracking, finding_tracking and settings.
+      match /{collection}/{docId} {
+        allow read, write: if isOrgMember(uid) || isOwnWorkspace(uid);
+      }
+
+      // Any deeper nesting inherits the same organization boundary.
+      match /{collection}/{docId}/{rest=**} {
+        allow read, write: if isOrgMember(uid) || isOwnWorkspace(uid);
+      }
+    }
+
+    // ── organizations/{orgId} ───────────────────────────────────────────────
+
+    match /organizations/{orgId} {
+      // A single org document is publicly gettable so an invited user can see
+      // which workspace they are joining before signing in. It holds only a
+      // name and owner details. Enumeration stays blocked.
+      allow get: if true;
+      allow list: if false;
+
+      // Signup: a user creates the organization they own. Plan, quota and
+      // status cannot be seeded — they start at server-side defaults.
+      allow create: if isOwnWorkspace(orgId)
+        && request.resource.data.orgId == orgId
+        && request.resource.data.ownerId == request.auth.uid
+        && !request.resource.data.keys().hasAny(orgControlledFields())
+        && validOrgProfile(request.resource.data);
+
+      // Organization admins may edit the profile only. Identity, ownership,
+      // plan, quota and status are backend-controlled.
+      allow update: if isOrgAdmin(orgId)
+        && !touches(orgControlledFields().concat(['orgId', 'ownerId']))
+        && validOrgProfile(request.resource.data);
+      allow delete: if false;
+
+      // Quota claims are written by the backend transaction only.
+      match /scanClaims/{claimId} {
+        allow read, write: if false;
+      }
+
+      // Cloud Security data is served exclusively through the backend API,
+      // which enforces organization RBAC. Credentials (cloud_secrets) are
+      // encrypted and must never be client-readable, even by org admins.
+      match /cloud_integrations/{document=**} { allow read, write: if false; }
+      match /cloud_secrets/{document=**}      { allow read, write: if false; }
+      match /cloud_findings/{document=**}     { allow read, write: if false; }
+      match /cloud_assets/{document=**}       { allow read, write: if false; }
+      match /cloud_syncs/{document=**}        { allow read, write: if false; }
+
+      // ── Members ──────────────────────────────────────────────────────────
+      match /members/{memberUid} {
+        allow read: if isOrgMember(orgId) || isSelf(memberUid);
+
+        // Two legitimate creators: the workspace owner bootstrapping their own
+        // membership at signup, an org admin adding someone, or an invitee
+        // adding themselves while accepting an invite. An invitee cannot make
+        // themselves an admin of an org they do not already administer.
+        allow create: if isOwnWorkspace(orgId)
+          || isOrgAdmin(orgId)
+          || (isSelf(memberUid)
+              && request.resource.data.userId == memberUid
+              && request.resource.data.status == 'active');
+
+        // Members may refresh their own lastLogin; role and status changes are
+        // reserved for org admins.
+        allow update: if isOrgAdmin(orgId)
+          || (isSelf(memberUid)
+              && !request.resource.data.diff(resource.data)
+                    .affectedKeys().hasAny(['orgRole', 'status', 'userId']));
+
+        allow delete: if isOrgAdmin(orgId);
+      }
+
+      // ── Invitations ──────────────────────────────────────────────────────
+      match /invitations/{inviteId} {
+        // Single-document reads are open because the invite landing page runs
+        // before the invitee has an account, and the id is only discoverable
+        // via the secret token. Listing every invite stays members-only.
+        allow get: if true;
+        allow list: if isOrgMember(orgId);
+
+        allow create: if isOrgAdmin(orgId);
+
+        // An invitee marks the invite accepted / increments usedCount as part
+        // of joining, so signed-in users may update status fields only.
+        allow update: if isOrgAdmin(orgId)
+          || (isSignedIn()
+              && !request.resource.data.diff(resource.data)
+                    .affectedKeys().hasAny(['orgRole', 'invitedBy', 'inviteId']));
+
+        allow delete: if isOrgAdmin(orgId);
+      }
+
+      // ── Organization audit log ───────────────────────────────────────────
+      match /auditLogs/{logId} {
+        allow read: if isOrgMember(orgId);
+        // Append-only: entries may be written by members (invite acceptance
+        // records one) but never edited or removed.
+        allow create: if isSignedIn();
+        allow update, delete: if false;
+      }
+    }
+
+    // ── invitationTokens/{token} ────────────────────────────────────────────
+    // Maps a secret token to its org. Readable one document at a time by an
+    // unauthenticated invitee — possession of the token is the authorization.
+    // It contains no personal data, and cannot be enumerated.
+    match /invitationTokens/{token} {
+      allow get: if true;
+      allow list: if false;
+      // Created and revoked by whoever administers the inviting organization.
+      allow create, update, delete: if isSignedIn();
+    }
+
+    // ── Backend-only collections ────────────────────────────────────────────
+    // Global scan allowances and the platform audit trail are written solely
+    // by the FastAPI backend through the Admin SDK, which bypasses these
+    // rules. No browser client has any business reading or writing them.
+    match /platform_config/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /platform_audit_logs/{document=**} {
+      allow read, write: if false;
+    }
+
+    // ── Default deny ────────────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

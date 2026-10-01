@@ -1,4 +1,5 @@
 import { API_BASE } from './api'
+import { authedFetch, idempotencyHeaders } from './api-auth'
 
 export type NetworkScanProfile = 'QUICK_SCAN' | 'FULL_SCAN'
 
@@ -40,9 +41,9 @@ export async function startNetworkScan(
   scanProfile: NetworkScanProfile = 'QUICK_SCAN',
   userId: string = 'anonymous',
 ): Promise<NetworkScanStartResponse> {
-  const res = await fetch(`${API_BASE}/network/scan/start`, {
+  const res = await authedFetch(`${API_BASE}/network/scan/start`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...idempotencyHeaders() },
     body: JSON.stringify({ target, scanProfile, userId }),
   })
   if (!res.ok) {

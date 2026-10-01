@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
+  Gauge,
   LayoutDashboard,
   Users,
   Building2,
@@ -46,6 +47,7 @@ const sections = [
       { icon: Users, label: 'Users', href: '/admin/users' },
       { icon: Building2, label: 'Organizations', href: '/admin/organizations' },
       { icon: CreditCard, label: 'Subscriptions', href: '/admin/subscriptions' },
+      { icon: Gauge, label: 'Plans & Quotas', href: '/admin/quotas' },
     ],
   },
   {

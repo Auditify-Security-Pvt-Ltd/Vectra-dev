@@ -83,15 +83,11 @@ const ALL_MODULES: NavModule[] = [
     label:      'Cloud Security',
     icon:       Cloud,
     href:       '/app/cloud-security',
-    comingSoon: true,
     items: [
-      { icon: Shield,        label: 'Accounts',          href: '/app/cloud-security' },
-      { icon: Network,       label: 'Cloud Assets',      href: '/app/cloud-security' },
-      { icon: Lock,          label: 'IAM Analysis',      href: '/app/cloud-security' },
-      { icon: FileText,      label: 'Storage Security',  href: '/app/cloud-security' },
-      { icon: Wifi,          label: 'Network Security',  href: '/app/cloud-security' },
-      { icon: AlertTriangle, label: 'Misconfigurations', href: '/app/cloud-security' },
-      { icon: AlertTriangle, label: 'Cloud Findings',    href: '/app/cloud-security' },
+      { icon: LayoutList,    label: 'Overview',     href: '/app/cloud-security'              },
+      { icon: Shield,        label: 'Integrations', href: '/app/cloud-security/integrations' },
+      { icon: AlertTriangle, label: 'Findings',     href: '/app/cloud-security/findings'     },
+      { icon: Network,       label: 'Assets',       href: '/app/cloud-security/assets'       },
     ],
   },
 ]
@@ -181,7 +177,11 @@ function ModuleSection({
         <div className="ml-3 pl-3 border-l border-foreground/10 mt-0.5 mb-1">
           {module.items.map((item) => {
             const Icon     = item.icon
-            const isActive = !module.comingSoon && (pathname === item.href || pathname.startsWith(item.href + '/'))
+            // Only the most specific matching item is active, so a module root
+            // (e.g. /app/cloud-security) doesn't stay highlighted on its sub-pages.
+            const matches  = (href: string) => pathname === href || pathname.startsWith(href + '/')
+            const best     = module.items.filter((i) => matches(i.href)).sort((x, y) => y.href.length - x.href.length)[0]
+            const isActive = !module.comingSoon && best?.href === item.href
             if (module.comingSoon) {
               return (
                 <Link key={item.label} href={module.href}>

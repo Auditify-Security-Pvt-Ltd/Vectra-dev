@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status, Depends
 from fastapi.responses import StreamingResponse
 
 from models.network_scan import NetworkHealthResponse, NetworkScanRequest
@@ -25,6 +25,8 @@ from scanners.nmap_scanner import (
 )
 from intelligence.nvd_client import get_cves_for_technology
 from utils.os_classifier import classify_os
+from services.auth import Identity, require_user
+from services.scan_guard import enforce_scan_quota, request_id_from
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -953,11 +955,20 @@ async def network_queue_status() -> dict:
 
 
 @router.post("/scan/start", status_code=status.HTTP_200_OK, tags=["Network"])
-async def start_network_scan(request: NetworkScanRequest) -> dict:
+async def start_network_scan(
+    request: NetworkScanRequest,
+    http_request: Request,
+    identity: Identity = Depends(require_user),
+) -> dict:
     target   = request.target
     profile  = request.scanProfile.value
-    user_id  = request.userId
-    scan_id  = _build_scan_id()
+    claim    = enforce_scan_quota(identity, request.userId, "network", _build_scan_id(),
+                                  request_id_from(http_request))
+    scan_id  = claim.scanId
+    user_id  = claim.uid
+    if claim.duplicate:
+        return {"scanId": scan_id, "status": _SCANS.get(scan_id, {}).get("status", "queued"),
+                "scanProfile": profile, "duplicate": True}
 
     _SCANS[scan_id] = _blank_scan(scan_id, target, profile, user_id)
     logger.info(
@@ -1020,7 +1031,7 @@ async def stream_network_scan(scan_id: str) -> StreamingResponse:
         event_generator(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control":     "no-cache",
+            "Cache-Control":     "no-cache, no-transform",
             "X-Accel-Buffering": "no",
             "Connection":        "keep-alive",
         },

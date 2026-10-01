@@ -1,4 +1,7 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+import { authedFetch, idempotencyHeaders } from './api-auth'
+// Same-origin proxy path by default (rewritten to the backend by next.config.mjs);
+// set NEXT_PUBLIC_API_URL to an absolute URL to bypass the proxy.
+const BASE = process.env.NEXT_PUBLIC_API_URL || '/api/backend'
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -108,9 +111,9 @@ export async function disconnectOAuth(
 }
 
 export async function startRepoScan(payload: RepoScanPayload): Promise<{ scanId: string }> {
-  const res = await fetch(`${BASE}/sast/scan/repo`, {
+  const res = await authedFetch(`${BASE}/sast/scan/repo`, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...idempotencyHeaders() },
     body:    JSON.stringify(payload),
   })
   if (!res.ok) {

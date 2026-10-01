@@ -1,205 +1,257 @@
 'use client'
 
 import { useState } from 'react'
-import { Search, Plus, Building2, MoreHorizontal, Eye, ShieldOff, TrendingUp, TrendingDown, Trash2, Users } from 'lucide-react'
+import { Search, RefreshCw, Eye, Gauge, ChevronLeft, ChevronRight } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { StatCardsSkeleton, TableSkeleton } from '@/components/app/loading-states'
+import { useAdminData } from '@/hooks/use-admin-data'
+import { useDelayedLoading } from '@/hooks/use-loading'
+import {
+  getOverview, getQuotaConfig, listOrganizations, updateOrganization, type AdminOrganization,
+} from '@/lib/api-admin'
+import { AdminError, fmtTime } from '@/components/admin/admin-shared'
+import {
+  EditOrganizationDialog, OrganizationDetailDialog, OrganizationQuotaDialog,
+  ORG_STATUS_CLS, allowanceLabel, countLabel, remainingClass,
+} from '@/components/admin/organization-dialogs'
 
-const initOrgs = [
-  { id: 1, name: 'FinTech Corp', domain: 'fintechcorp.io', plan: 'Enterprise', users: 24, assets: 412, scans: 184, findings: 892, created: 'Nov 12, 2024', status: 'Active', mrr: 2499 },
-  { id: 2, name: 'MedSecure Ltd', domain: 'medsecure.io', plan: 'Professional', users: 8, assets: 127, scans: 62, findings: 341, created: 'Dec 1, 2024', status: 'Active', mrr: 899 },
-  { id: 3, name: 'CloudNative IO', domain: 'cloudnative.io', plan: 'Business', users: 12, assets: 228, scans: 97, findings: 524, created: 'Jan 3, 2025', status: 'Trial', mrr: 0 },
-  { id: 4, name: 'CyberShield Inc', domain: 'cybershield.io', plan: 'Starter', users: 3, assets: 44, scans: 21, findings: 87, created: 'Jan 14, 2025', status: 'Active', mrr: 299 },
-  { id: 5, name: 'DataSafe Corp', domain: 'datasafe.com', plan: 'Enterprise', users: 31, assets: 648, scans: 312, findings: 1247, created: 'Sep 8, 2024', status: 'Active', mrr: 2499 },
-  { id: 6, name: 'SecOps Co', domain: 'secopsco.io', plan: 'Business', users: 9, assets: 188, scans: 74, findings: 412, created: 'Oct 22, 2024', status: 'Active', mrr: 1299 },
-  { id: 7, name: 'InfraShield GmbH', domain: 'infrashield.de', plan: 'Professional', users: 6, assets: 94, scans: 48, findings: 218, created: 'Nov 30, 2024', status: 'Suspended', mrr: 899 },
-  { id: 8, name: 'ZeroSec Labs', domain: 'zerosec.in', plan: 'Starter', users: 4, assets: 52, scans: 28, findings: 134, created: 'Dec 10, 2024', status: 'Active', mrr: 299 },
-  { id: 9, name: 'Guardian Corp', domain: 'guardiancorp.net', plan: 'Enterprise', users: 18, assets: 298, scans: 142, findings: 678, created: 'Aug 15, 2024', status: 'Active', mrr: 2499 },
-  { id: 10, name: 'SecureHub MX', domain: 'securehub.mx', plan: 'Business', users: 7, assets: 112, scans: 55, findings: 287, created: 'Oct 5, 2024', status: 'Active', mrr: 1299 },
-  { id: 11, name: 'Apex Security SG', domain: 'apexsecurity.sg', plan: 'Professional', users: 11, assets: 165, scans: 78, findings: 398, created: 'Sep 20, 2024', status: 'Active', mrr: 899 },
-  { id: 12, name: 'NetDefend GH', domain: 'netdefend.gh', plan: 'Starter', users: 2, assets: 28, scans: 12, findings: 54, created: 'Jan 8, 2025', status: 'Inactive', mrr: 299 },
-]
+const PAGE_SIZE = 25
 
-const planConfig: Record<string, { badge: string; tier: number }> = {
-  Enterprise: { badge: 'bg-primary/10 text-primary border-primary/20', tier: 4 },
-  Business: { badge: 'bg-blue-500/10 text-blue-500 border-blue-500/20', tier: 3 },
-  Professional: { badge: 'bg-accent/10 text-accent border-accent/20', tier: 2 },
-  Starter: { badge: 'bg-muted text-muted-foreground border-border', tier: 1 },
-}
+/**
+ * Organizations — the plan and scan-quota boundary.
+ * Every member of an organization shares its allowance across all scan types.
+ */
+export default function AdminOrganizationsPage() {
+  const [search, setSearch]   = useState('')
+  const [query, setQuery]     = useState('')
+  const [plan, setPlan]       = useState('all')
+  const [status, setStatus]   = useState('all')
+  const [offset, setOffset]   = useState(0)
 
-const statusConfig: Record<string, string> = {
-  Active: 'bg-green-500/10 text-green-500',
-  Trial: 'bg-yellow-500/10 text-yellow-500',
-  Suspended: 'bg-red-500/10 text-red-500',
-  Inactive: 'bg-muted text-muted-foreground',
-}
+  const [viewing, setViewing]   = useState<string | null>(null)
+  const [editing, setEditing]   = useState<AdminOrganization | null>(null)
+  const [quotaFor, setQuotaFor] = useState<AdminOrganization | null>(null)
+  const [statusBusy, setStatusBusy] = useState<string | null>(null)
+  const [reloadKey, setReloadKey]   = useState(0)
 
-const plans = ['All Plans', 'Enterprise', 'Business', 'Professional', 'Starter']
-const statuses = ['All Statuses', 'Active', 'Trial', 'Suspended', 'Inactive']
-
-export default function AdminOrgsPage() {
-  const [orgs, setOrgs] = useState(initOrgs)
-  const [search, setSearch] = useState('')
-  const [planFilter, setPlanFilter] = useState('All Plans')
-  const [statusFilter, setStatusFilter] = useState('All Statuses')
-  const [createOpen, setCreateOpen] = useState(false)
-
-  const filtered = orgs.filter(o =>
-    (o.name.toLowerCase().includes(search.toLowerCase()) ||
-     o.domain.toLowerCase().includes(search.toLowerCase())) &&
-    (planFilter === 'All Plans' || o.plan === planFilter) &&
-    (statusFilter === 'All Statuses' || o.status === statusFilter)
+  const list = useAdminData(
+    () => listOrganizations({ search: query, plan, status, limit: PAGE_SIZE, offset }),
+    { deps: [query, plan, status, offset] },
   )
+  const overview = useAdminData(getOverview)
+  const config   = useAdminData(getQuotaConfig)
+  const showSkeleton = useDelayedLoading(list.loading && !list.data)
 
-  const toggleSuspend = (id: number) =>
-    setOrgs(prev => prev.map(o => o.id === id ? { ...o, status: o.status === 'Suspended' ? 'Active' : 'Suspended' } : o))
+  function refreshAll() {
+    list.refresh()
+    overview.refresh()
+    setReloadKey((k) => k + 1)
+  }
 
-  const totalMRR = orgs.filter(o => o.status === 'Active').reduce((acc, o) => acc + o.mrr, 0)
-  const enterpriseCount = orgs.filter(o => o.plan === 'Enterprise').length
-  const trialCount = orgs.filter(o => o.status === 'Trial').length
-  const activeCount = orgs.filter(o => o.status === 'Active').length
+  function submitSearch(e: React.FormEvent) {
+    e.preventDefault()
+    setOffset(0)
+    setQuery(search.trim())
+  }
+
+  async function toggleStatus(org: AdminOrganization) {
+    const next = org.status === 'active' ? 'disabled' : 'active'
+    if (next === 'disabled' && !window.confirm(
+      `Disable ${org.name ?? org.orgId}?\n\nMembers will not be able to start new scans. ` +
+      'Existing scans, findings and reports are kept.',
+    )) return
+
+    setStatusBusy(org.orgId)
+    try {
+      await updateOrganization(org.orgId, { status: next })
+      toast.success(next === 'active' ? 'Organization enabled' : 'Organization disabled')
+      refreshAll()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Update failed')
+    } finally {
+      setStatusBusy(null)
+    }
+  }
+
+  const data  = list.data
+  const total = data?.total ?? 0
+  const page  = Math.floor(offset / PAGE_SIZE) + 1
+  const pages = Math.max(Math.ceil(total / PAGE_SIZE), 1)
+  const plans = data?.plans ?? (config.data ? Object.keys(config.data.planAllowances).sort() : [])
+  const o = overview.data?.organizations
+
+  const selectCls = 'h-9 px-3 bg-foreground/5 border border-foreground/20 rounded-lg text-foreground text-sm capitalize'
 
   return (
-    <div className="p-8 space-y-8">
-      <div className="flex items-center justify-between">
+    <div className="p-8 space-y-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Organizations</h1>
-          <p className="text-muted-foreground mt-1">Manage all tenant organizations on the Vectra platform</p>
+          <h1 className="text-2xl font-bold text-foreground">Organizations</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Plans and shared scan allowances. Every member draws from their organization&apos;s quota.
+          </p>
         </div>
-        <div className="flex gap-3">
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg h-10 px-5">
-                <Plus className="w-4 h-4 mr-2" />New Organization
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-card border-foreground/10">
-              <DialogHeader>
-                <DialogTitle>Create Organization</DialogTitle>
-                <DialogDescription>Onboard a new tenant organization</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
-                <div className="space-y-2"><Label>Organization Name</Label><Input placeholder="Acme Corp" className="bg-foreground/5 border-foreground/20 rounded-lg" /></div>
-                <div className="space-y-2"><Label>Primary Domain</Label><Input placeholder="acmecorp.io" className="bg-foreground/5 border-foreground/20 rounded-lg" /></div>
-                <div className="space-y-2"><Label>Admin Email</Label><Input type="email" placeholder="admin@acmecorp.io" className="bg-foreground/5 border-foreground/20 rounded-lg" /></div>
-                <div className="space-y-2">
-                  <Label>Subscription Plan</Label>
-                  <select className="w-full px-3 py-2 bg-foreground/5 border border-foreground/20 rounded-lg text-foreground text-sm">
-                    <option>Starter</option><option>Professional</option><option>Business</option><option>Enterprise</option>
-                  </select>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setCreateOpen(false)} className="rounded-lg border-foreground/20">Cancel</Button>
-                <Button className="bg-primary hover:bg-primary/90 rounded-lg" onClick={() => setCreateOpen(false)}>Create</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
+        <Button variant="outline" size="sm" className="border-foreground/20 gap-2" onClick={refreshAll}>
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+        </Button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Orgs', value: orgs.length, color: 'text-foreground' },
-          { label: 'Active', value: activeCount, color: 'text-green-500' },
-          { label: 'Enterprise', value: enterpriseCount, color: 'text-primary' },
-          { label: 'Trials', value: trialCount, color: 'text-yellow-500' },
-        ].map(s => (
-          <Card key={s.label} className="bg-card border-foreground/10">
-            <CardContent className="pt-5 pb-4">
-              <p className="text-xs text-muted-foreground">{s.label}</p>
-              <p className={`text-2xl font-bold mt-1 ${s.color}`}>{s.value}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {(list.error || overview.error) && <AdminError message={(list.error || overview.error)!} />}
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search organizations, domains..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10 bg-foreground/5 border-foreground/20 rounded-lg h-10" />
+      {overview.loading && !o ? (
+        <StatCardsSkeleton count={4} />
+      ) : o ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: 'Organizations',    value: o.total,                  cls: 'text-foreground' },
+            { label: 'Active',           value: o.total - o.disabled,     cls: 'text-green-500' },
+            { label: 'Free plan',        value: o.free,                   cls: 'text-violet-400' },
+            { label: 'Near scan limit',  value: o.nearLimit,              cls: 'text-orange-400' },
+          ].map((c) => (
+            <Card key={c.label} className="bg-card border-foreground/10">
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">{c.label}</p>
+                <p className={`text-2xl font-bold mt-1 ${c.cls}`}>{c.value}</p>
+              </CardContent>
+            </Card>
+          ))}
         </div>
-        <select value={planFilter} onChange={e => setPlanFilter(e.target.value)} className="px-3 py-2 h-10 bg-foreground/5 border border-foreground/20 rounded-lg text-foreground text-sm">
-          {plans.map(p => <option key={p}>{p}</option>)}
+      ) : null}
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <form onSubmit={submitSearch} className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search name, website, owner or id…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 h-9 w-72 bg-foreground/5 border-foreground/20 text-sm"
+          />
+        </form>
+        <select value={plan} onChange={(e) => { setOffset(0); setPlan(e.target.value) }} className={selectCls} aria-label="Plan">
+          <option value="all" className="bg-card">All plans</option>
+          {plans.map((p) => <option key={p} value={p} className="bg-card">{p}</option>)}
         </select>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-3 py-2 h-10 bg-foreground/5 border border-foreground/20 rounded-lg text-foreground text-sm">
-          {statuses.map(s => <option key={s}>{s}</option>)}
+        <select value={status} onChange={(e) => { setOffset(0); setStatus(e.target.value) }} className={selectCls} aria-label="Status">
+          <option value="all" className="bg-card">All statuses</option>
+          <option value="active" className="bg-card">Active</option>
+          <option value="disabled" className="bg-card">Disabled</option>
         </select>
       </div>
 
-      {/* Table */}
       <Card className="bg-card border-foreground/10">
-        <CardHeader>
-          <CardTitle>All Organizations</CardTitle>
-          <CardDescription>{filtered.length} organizations · Total MRR: ${totalMRR.toLocaleString()}/mo</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-foreground/10">
-                  {['Organization', 'Plan', 'Users', 'Assets', 'Scans', 'Findings', 'MRR', 'Status', 'Created', 'Actions'].map(h => (
-                    <th key={h} className="text-left py-3 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(org => (
-                  <tr key={org.id} className="border-b border-foreground/5 hover:bg-foreground/5 transition-colors">
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center shrink-0">
-                          <Building2 className="w-4 h-4 text-primary" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{org.name}</p>
-                          <p className="text-xs text-muted-foreground">{org.domain}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3"><span className={`text-xs font-medium px-2 py-0.5 rounded border ${planConfig[org.plan]?.badge}`}>{org.plan}</span></td>
-                    <td className="py-3 px-3 text-sm text-foreground">{org.users}</td>
-                    <td className="py-3 px-3 text-sm text-foreground">{org.assets.toLocaleString()}</td>
-                    <td className="py-3 px-3 text-sm text-foreground">{org.scans}</td>
-                    <td className="py-3 px-3 text-sm text-orange-500 font-medium">{org.findings.toLocaleString()}</td>
-                    <td className="py-3 px-3 text-sm font-medium text-emerald-500">${org.mrr > 0 ? `${org.mrr.toLocaleString()}/mo` : '—'}</td>
-                    <td className="py-3 px-3"><span className={`text-xs font-medium px-2 py-0.5 rounded ${statusConfig[org.status]}`}>{org.status}</span></td>
-                    <td className="py-3 px-3 text-sm text-muted-foreground">{org.created}</td>
-                    <td className="py-3 px-3">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-foreground/10">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="bg-card border-foreground/10 rounded-lg w-48">
-                          <DropdownMenuItem className="cursor-pointer rounded-md"><Eye className="w-3.5 h-3.5 mr-2" />View Details</DropdownMenuItem>
-                          <DropdownMenuItem className="cursor-pointer rounded-md"><TrendingUp className="w-3.5 h-3.5 mr-2" />Upgrade Plan</DropdownMenuItem>
-                          <DropdownMenuItem className="cursor-pointer rounded-md"><TrendingDown className="w-3.5 h-3.5 mr-2" />Downgrade Plan</DropdownMenuItem>
-                          <DropdownMenuItem className="cursor-pointer rounded-md"><Users className="w-3.5 h-3.5 mr-2" />Impersonate Admin</DropdownMenuItem>
-                          <DropdownMenuSeparator className="bg-foreground/10" />
-                          <DropdownMenuItem className="cursor-pointer rounded-md" onClick={() => toggleSuspend(org.id)}>
-                            <ShieldOff className="w-3.5 h-3.5 mr-2" />{org.status === 'Suspended' ? 'Activate' : 'Suspend'}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="cursor-pointer rounded-md text-destructive focus:text-destructive focus:bg-destructive/10">
-                            <Trash2 className="w-3.5 h-3.5 mr-2" />Reset Organization
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </td>
+        <CardContent className="p-0">
+          {showSkeleton ? (
+            <div className="p-4"><TableSkeleton rows={6} cols={9} /></div>
+          ) : list.loading && !data ? null : !data?.organizations.length ? (
+            <div className="text-center py-16">
+              <p className="text-sm text-muted-foreground">
+                {query || plan !== 'all' || status !== 'all' ? 'No organizations match these filters.' : 'No organizations yet.'}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-foreground/10">
+                    {['Organization', 'Plan', 'Users', 'Assets', 'Scans', 'Findings', 'Allowance', 'Used', 'Remaining', 'Status', 'Created', ''].map((h) => (
+                      <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {data.organizations.map((org) => {
+                    const q = org.quota
+                    return (
+                      <tr key={org.orgId} className="border-b border-foreground/5 hover:bg-foreground/3">
+                        <td className="py-3 px-4">
+                          <button className="text-left" onClick={() => setViewing(org.orgId)}>
+                            <p className="text-sm font-medium text-foreground hover:text-primary">{org.name ?? '—'}</p>
+                            <p className="text-[11px] text-muted-foreground font-mono">{org.website ?? org.ownerEmail ?? org.orgId}</p>
+                          </button>
+                        </td>
+                        <td className="py-3 px-4 text-xs capitalize text-foreground">{q.plan}</td>
+                        <td className="py-3 px-4 text-xs font-mono">{countLabel(org.counts?.users)}</td>
+                        <td className="py-3 px-4 text-xs font-mono">{countLabel(org.counts?.assets)}</td>
+                        <td className="py-3 px-4 text-xs font-mono">{countLabel(org.counts?.scans)}</td>
+                        <td className="py-3 px-4 text-xs font-mono">{countLabel(org.counts?.findings)}</td>
+                        <td className="py-3 px-4 text-xs font-mono text-foreground whitespace-nowrap">
+                          {allowanceLabel(q.effectiveAllowance)}
+                          {q.bonusScans > 0 && !q.unlimited && (
+                            <span className="text-[10px] text-violet-400 ml-1">({q.planAllowance}+{q.bonusScans})</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-xs font-mono text-muted-foreground">{q.used}</td>
+                        <td className="py-3 px-4 text-xs font-mono">
+                          <span className={remainingClass(q.remaining, q.unlimited)}>{allowanceLabel(q.remaining)}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border capitalize ${ORG_STATUS_CLS[org.status]}`}>
+                            {org.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-xs text-muted-foreground whitespace-nowrap">{fmtTime(org.createdAt)}</td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-1 justify-end">
+                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                              onClick={() => setViewing(org.orgId)}>
+                              <Eye className="w-3 h-3" /> View
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                              onClick={() => setQuotaFor(org)}>
+                              <Gauge className="w-3 h-3" /> Quota
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {total > PAGE_SIZE && (
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="border-foreground/20 h-8" disabled={offset === 0}
+              onClick={() => setOffset(Math.max(offset - PAGE_SIZE, 0))}>
+              <ChevronLeft className="w-3.5 h-3.5" /> Previous
+            </Button>
+            <span className="text-xs text-muted-foreground self-center">Page {page} of {pages}</span>
+            <Button variant="outline" size="sm" className="border-foreground/20 h-8" disabled={offset + PAGE_SIZE >= total}
+              onClick={() => setOffset(offset + PAGE_SIZE)}>
+              Next <ChevronRight className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <OrganizationDetailDialog
+        orgId={viewing}
+        onClose={() => setViewing(null)}
+        onEdit={setEditing}
+        onQuota={setQuotaFor}
+        onToggleStatus={toggleStatus}
+        statusBusy={statusBusy !== null && statusBusy === viewing}
+        reloadKey={reloadKey}
+      />
+      <EditOrganizationDialog org={editing} onClose={() => setEditing(null)} onSaved={refreshAll} />
+      <OrganizationQuotaDialog
+        org={quotaFor}
+        plans={plans}
+        planAllowances={config.data?.planAllowances ?? null}
+        onClose={() => setQuotaFor(null)}
+        onSaved={refreshAll}
+      />
     </div>
   )
 }

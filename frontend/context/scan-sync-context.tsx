@@ -22,6 +22,8 @@ import { useAuth } from '@/context/auth-context'
 
 export const ScanSyncContext = createContext<null>(null)
 
+const MAX_STREAM_FAILURES = 5
+
 interface SseConn {
   es: EventSource
   lastFindingCount: number
@@ -58,6 +60,8 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
   const [scans, setScans] = useState<FirestoreScan[]>([])
 
   const connectionsRef = useRef<Map<string, SseConn>>(new Map())
+  const failuresRef    = useRef<Map<string, number>>(new Map())
+  const [retryTick, setRetryTick] = useState(0)
   const bulkTimersRef  = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const backfilledRef  = useRef<Set<string>>(new Set())
 
@@ -75,11 +79,13 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
     const connections = connectionsRef.current
     const bulkTimers  = bulkTimersRef.current
     const backfilled  = backfilledRef.current
+    const failures    = failuresRef.current
 
     // Open connections for newly active scans
     for (const scan of scans) {
       if (!ACTIVE_STATUSES.has(scan.status)) continue
       if (connections.has(scan.scanId)) continue
+      if ((failures.get(scan.scanId) ?? 0) >= MAX_STREAM_FAILURES) continue
 
       const scanId     = scan.scanId
       const target     = scan.target
@@ -100,6 +106,7 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
           const data        = JSON.parse(event.data as string)
           const currentConn = connections.get(scanId)
           if (!currentConn) return
+          failures.delete(scanId)
 
           const newStatus: string = data.status ?? currentConn.lastStatus
           const isTerminal        = !ACTIVE_STATUSES.has(newStatus)
@@ -193,9 +200,29 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      // A dropped stream must not freeze the scan's status: reconnect with
+      // backoff. Only an explicit 404 (backend no longer has the scan, e.g. it
+      // restarted) is recorded as failed — transient errors never are.
       es.onerror = () => {
         es.close()
         connections.delete(scanId)
+        const attempt = (failures.get(scanId) ?? 0) + 1
+        failures.set(scanId, attempt)
+        if (attempt < MAX_STREAM_FAILURES) {
+          setTimeout(() => setRetryTick((t) => t + 1), Math.min(1000 * 2 ** attempt, 30_000))
+          return
+        }
+        fetch(`${API_BASE}/scan/${scanId}`)
+          .then((res) => {
+            if (res.status !== 404) return
+            updateFirestoreScan(uid, scanId, {
+              status:      'failed',
+              currentStep: 'Failed',
+              error:       'The scan is no longer known to the scanner service (it may have restarted). Start it again.',
+              completedAt: new Date().toISOString(),
+            }).catch(() => {})
+          })
+          .catch(() => {})
       }
     }
 
@@ -261,7 +288,7 @@ export function ScanSyncProvider({ children }: { children: React.ReactNode }) {
           }
         })
     }
-  }, [scans, user])
+  }, [scans, user, retryTick])
 
   // ── Cleanup on unmount ──────────────────────────────────────────────
   useEffect(() => {
