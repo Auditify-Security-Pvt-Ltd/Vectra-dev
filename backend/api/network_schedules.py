@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -25,7 +26,9 @@ router = APIRouter(prefix="/network/schedules", tags=["Network Schedules"])
 
 # ── Persistence ───────────────────────────────────────────────────────
 
-_DATA_DIR       = Path(__file__).parent.parent / "data"
+# SCHEDULES_DIR points at durable storage on hosts with ephemeral disks
+# (e.g. a Cloud Storage volume on Cloud Run).
+_DATA_DIR       = Path(os.getenv("SCHEDULES_DIR") or Path(__file__).parent.parent / "data")
 _SCHEDULES_FILE = _DATA_DIR / "network_schedules.json"
 _SCHEDULES: Dict[str, dict] = {}
 _SCHEDULER_TASK: "asyncio.Task | None" = None

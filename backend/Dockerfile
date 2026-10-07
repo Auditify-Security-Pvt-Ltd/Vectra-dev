@@ -18,6 +18,10 @@ FROM python:3.13-slim-bookworm
 ARG NUCLEI_VERSION=3.8.0
 ARG SUBFINDER_VERSION=2.16.0
 ARG HTTPX_VERSION=1.6.10
+# Set to false for hosts that cannot grant NET_RAW/NET_ADMIN (e.g. Cloud Run):
+# a capability-tagged nmap binary refuses to exec there. Pair with
+# NMAP_UNPRIVILEGED=true at runtime.
+ARG NMAP_SETCAP=true
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -53,7 +57,7 @@ RUN set -eux; \
     chmod +x /usr/local/bin/nuclei /usr/local/bin/subfinder /usr/local/bin/httpx-toolkit; \
     rm -f /tmp/*.zip; \
     # --- least-privilege nmap: raw-socket caps on the binary, not the process ---
-    setcap cap_net_raw,cap_net_admin+eip "$(command -v nmap)"; \
+    if [ "$NMAP_SETCAP" = "true" ]; then setcap cap_net_raw,cap_net_admin+eip "$(command -v nmap)"; fi; \
     rm -rf /var/lib/apt/lists/*
 
 # ── Non-root application user ────────────────────────────────────────────────
@@ -83,4 +87,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # uvicorn's graceful-shutdown window lets in-flight requests finish; the async
 # scan tasks are cancelled on loop shutdown, which kills their child processes.
 ENTRYPOINT ["tini", "--"]
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "30"]
+# PORT is injected by Cloud Run; defaults to 8000 elsewhere.
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --timeout-graceful-shutdown 30"]

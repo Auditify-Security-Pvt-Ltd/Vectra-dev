@@ -42,12 +42,13 @@ app = FastAPI(
 )
 
 # ── CORS ────────────────────────────────────────────────────────────
-# allow_origins=["*"] is intentional for local development.
-# In production, replace with the exact frontend origin, e.g.:
-#   allow_origins=["https://app.vectra.io"]
+# CORS_ORIGINS is a comma-separated list of allowed frontend origins, e.g.
+#   CORS_ORIGINS=https://app.vectra.io
+# Unset falls back to "*" for local development.
+_cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()] or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import shutil
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,6 +16,12 @@ WEB_PORTS: frozenset[int] = frozenset({80, 443, 8080, 8443, 8000, 8888, 3000, 50
 
 def is_nmap_available() -> bool:
     return shutil.which("nmap") is not None
+
+
+# Hosts without raw-socket capabilities (e.g. Cloud Run) make nmap abort on -O
+# instead of skipping it, so unprivileged mode drops OS detection and forces
+# TCP-connect scans.
+NMAP_UNPRIVILEGED = os.getenv("NMAP_UNPRIVILEGED", "false").strip().lower() in {"1", "true", "yes"}
 
 
 # ── Grepable-output parsers ───────────────────────────────────────────
@@ -89,6 +96,8 @@ def _parse_os_mac(output: str, ip: str) -> Tuple[str, str, str]:
 # ── Low-level runner ──────────────────────────────────────────────────
 
 async def _nmap(*args: str) -> str:
+    if NMAP_UNPRIVILEGED:
+        args = ("--unprivileged",) + tuple(a for a in args if a != "-O")
     cmd = ["nmap"] + list(args)
     logger.info(f"[nmap] {' '.join(cmd)}")
     proc = await asyncio.create_subprocess_exec(
