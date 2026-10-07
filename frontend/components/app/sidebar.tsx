@@ -24,6 +24,8 @@ interface NavItem {
   icon:  React.ComponentType<{ className?: string }>
   label: string
   href:  string
+  // Kept routable but left out of the sidebar.
+  hidden?: boolean
 }
 
 interface NavModule {
@@ -99,7 +101,7 @@ const TOP_ITEMS: StandaloneItem[] = [
 const ALL_BOTTOM_ITEMS: StandaloneItem[] = [
   { id: 'vuln-mgmt',   icon: ShieldAlert, label: 'Vulnerability Management', href: '/app/findings'    },
   { id: 'reports',     icon: FileText,    label: 'Reports',                  href: '/app/reports'     },
-  { id: 'ai-analysis', icon: Sparkles,    label: 'AI Analysis',              href: '/app/ai-analysis' },
+  { id: 'ai-analysis', icon: Sparkles,    label: 'AI Analysis',              href: '/app/ai-analysis', hidden: true },
   { id: 'team',        icon: Users,       label: 'Team',                     href: '/app/team'        },
 ]
 
@@ -244,7 +246,7 @@ export function AppSidebar() {
   const visibleBottomIds = ROLE_VISIBLE_BOTTOM[orgRole] ?? []
 
   const visibleModules     = ALL_MODULES.filter((m) => visibleModIds.includes(m.id))
-  const visibleBottomItems = ALL_BOTTOM_ITEMS.filter((i) => visibleBottomIds.includes(i.id))
+  const visibleBottomItems = ALL_BOTTOM_ITEMS.filter((i) => !i.hidden && visibleBottomIds.includes(i.id))
 
   const [openModule, setOpenModule] = useState<string | null>(
     () => getModuleForPath(pathname) ?? (visibleModules[0]?.id ?? null),
